@@ -1,18 +1,68 @@
 import { useState } from 'react';
+import clsx from 'clsx';
 import { useFundStore } from '../store/fundStore';
 import { useAppStore } from '../store/appStore';
 import { IndexBar } from './IndexBar';
 import { FundModal } from './FundModal';
 import { FundRankingSection } from './FundRankingSection';
+import { validateFundCode } from '../api/eastmoney';
 
 export function HomePage() {
   const { selectedFundCode, selectFund } = useFundStore();
   const { setCurrentView } = useAppStore();
   const [showFundModal, setShowFundModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResult, setSearchResult] = useState<{ code: string; name: string } | null>(null);
+  const [searchError, setSearchError] = useState('');
 
   const handleFundClick = (code: string) => {
     selectFund(code);
     setShowFundModal(true);
+  };
+
+  const handleSearch = async () => {
+    const code = searchQuery.trim();
+    if (!code) {
+      setSearchError('请输入基金代码');
+      return;
+    }
+
+    if (!/^\d{6}$/.test(code)) {
+      setSearchError('基金代码应为6位数字');
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchError('');
+    setSearchResult(null);
+
+    try {
+      const validation = await validateFundCode(code);
+      if (validation.valid && validation.name) {
+        setSearchResult({ code, name: validation.name });
+      } else {
+        setSearchError('基金代码不存在或无法访问');
+      }
+    } catch (error) {
+      setSearchError(error instanceof Error ? error.message : '搜索失败，请重试');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSearchResultClick = () => {
+    if (searchResult) {
+      handleFundClick(searchResult.code);
+      setSearchQuery('');
+      setSearchResult(null);
+    }
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
   };
 
   return (
@@ -29,9 +79,62 @@ export function HomePage() {
           实时透视 · 智能洞察 · 穿透持仓
         </p>
 
+        {/* 全局搜索框 */}
+        <div className="mt-8 w-full max-w-md relative z-10">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setSearchError('');
+                setSearchResult(null);
+              }}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="输入6位基金代码搜索..."
+              className="w-full px-4 py-3 pl-12 pr-24 bg-white/5 border border-white/10 rounded-full text-text-primary placeholder-text-tertiary focus:outline-none focus:border-neon-blue focus:ring-2 focus:ring-neon-blue/20 transition-all"
+            />
+            <i className="ri-search-line absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary" />
+            <button
+              onClick={handleSearch}
+              disabled={isSearching || !searchQuery.trim()}
+              className={clsx(
+                'absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 rounded-full text-sm font-medium transition-all',
+                isSearching || !searchQuery.trim()
+                  ? 'bg-white/5 text-text-tertiary cursor-not-allowed'
+                  : 'bg-neon-blue/20 text-neon-blue hover:bg-neon-blue/30'
+              )}
+            >
+              {isSearching ? '搜索中...' : '搜索'}
+            </button>
+          </div>
+          
+          {/* 搜索结果 */}
+          {searchResult && (
+            <div className="mt-3 glass-card p-4 cursor-pointer hover:border-neon-blue/50 transition-all animate-in fade-in slide-in-from-top-2"
+              onClick={handleSearchResultClick}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-text-primary">{searchResult.name}</div>
+                  <div className="text-sm text-text-tertiary mt-1">基金代码: {searchResult.code}</div>
+                </div>
+                <i className="ri-arrow-right-line text-neon-blue text-xl" />
+              </div>
+            </div>
+          )}
+
+          {/* 错误提示 */}
+          {searchError && (
+            <div className="mt-3 text-sm text-red-400 animate-in fade-in slide-in-from-top-2">
+              {searchError}
+            </div>
+          )}
+        </div>
+
         <button
           onClick={() => setCurrentView('portfolio')}
-          className="mt-8 px-8 py-3 bg-neon-red/10 border border-neon-red/50 rounded-full text-neon-red hover:bg-neon-red/20 hover:shadow-[0_0_30px_rgba(255,45,85,0.4)] transition-all relative z-10"
+          className="mt-6 px-8 py-3 bg-neon-red/10 border border-neon-red/50 rounded-full text-neon-red hover:bg-neon-red/20 hover:shadow-[0_0_30px_rgba(255,45,85,0.4)] transition-all relative z-10"
         >
           开始体验 →
         </button>
