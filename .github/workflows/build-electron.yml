@@ -103,8 +103,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: |
-      github.event_name == 'push' && 
-      startsWith(github.ref, 'refs/tags/v') &&
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch') &&
       (needs.build.result == 'success' || needs.build.result == 'partial')
     
     steps:
@@ -116,12 +116,20 @@ jobs:
         with:
           path: artifacts
 
-      - name: Get version from tag
+      - name: Get version from tag or input
         id: get_version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            TAG_NAME="${{ github.ref }}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+            TAG_NAME="v$VERSION"
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
+          echo "Tag: $TAG_NAME"
 
       - name: List artifacts
         run: |
@@ -131,32 +139,48 @@ jobs:
           echo "Looking for release files:"
           find artifacts -type f \( -name "*.exe" -o -name "*.dmg" \) -exec ls -lh {} \;
 
+      - name: Generate release body
+        id: release_body
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            CHANGES_LINE="- 查看 [提交历史](https://github.com/${{ github.repository }}/compare/${{ github.event.before }}...${{ github.sha }})"
+          else
+            CHANGES_LINE="- 手动触发构建"
+          fi
+          BODY=$(cat <<EOF
+          ## FundPulse $VERSION
+
+          ### 📦 下载
+
+          - **Windows**: 下载 \`FundPulse-Setup.exe\` 安装程序
+          - **macOS**: 下载 \`FundPulse.dmg\` 磁盘映像
+
+          ### ✨ 更新内容
+
+          $CHANGES_LINE
+
+          ### 📝 使用说明
+
+          1. 下载对应平台的安装包
+          2. 安装并运行应用
+          3. 开始追踪您的基金组合
+
+          ---
+
+          **注意**: 首次运行可能需要一些时间加载。
+          EOF
+          )
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref }}
+          tag_name: ${{ steps.get_version.outputs.tag_name }}
           name: FundPulse ${{ steps.get_version.outputs.version }}
-          body: |
-            ## FundPulse ${{ steps.get_version.outputs.version }}
-
-            ### 📦 下载
-
-            - **Windows**: 下载 `FundPulse-Setup.exe` 安装程序
-            - **macOS**: 下载 `FundPulse.dmg` 磁盘映像
-
-            ### ✨ 更新内容
-
-            - 查看 [提交历史](https://github.com/${{ github.repository }}/compare/${{ github.event.before }}...${{ github.sha }})
-
-            ### 📝 使用说明
-
-            1. 下载对应平台的安装包
-            2. 安装并运行应用
-            3. 开始追踪您的基金组合
-
-            ---
-
-            **注意**: 首次运行可能需要一些时间加载。
+          body: ${{ steps.release_body.outputs.body }}
           files: |
             artifacts/**/*.exe
             artifacts/**/*.dmg

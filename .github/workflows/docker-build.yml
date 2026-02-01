@@ -1,9 +1,10 @@
 name: Build Docker Image
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # 暂停自动触发 - 仅保留手动触发
+  # push:
+  #   tags:
+  #     - 'v*'
   workflow_dispatch:
     inputs:
       tag:
