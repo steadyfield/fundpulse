@@ -31,19 +31,27 @@ export function ScrollToTop() {
   return (
     <button
       onClick={scrollToTop}
+      style={{
+        position: 'fixed',
+        bottom: '80px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 9999,
+      }}
       className={clsx(
-        'fixed bottom-8 right-8 z-50 w-14 h-14 rounded-full',
+        'w-10 h-10 rounded-full',
         'glass-card border border-neon-blue/50',
         'flex items-center justify-center',
         'text-neon-blue hover:text-white',
         'hover:bg-neon-blue/20 hover:border-neon-blue',
-        'hover:shadow-[0_0_20px_rgba(0,212,255,0.4)]',
-        'transition-all duration-300',
+        'hover:shadow-[0_0_15px_rgba(0,212,255,0.4)]',
+        'active:scale-90',
+        'transition-all duration-150',
         'backdrop-blur-md'
       )}
       title="回到顶部"
     >
-      <i className="ri-arrow-up-line text-2xl" />
+      <i className="ri-arrow-up-line text-lg" />
     </button>
   );
 }
