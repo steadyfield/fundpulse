@@ -48,13 +48,17 @@ export const useIndexStore = create<IndexStore>((set, get) => ({
       const keys = Object.keys(INDEX_CODES);
       const data = await fetchMultipleIndices(keys);
 
-      const indices: MarketIndex[] = data.map(item => ({
-        code: item.code,
-        name: item.name,
-        currentPrice: item.currentPrice,
-        changePercent: item.changePercent,
-        updatedAt: new Date(),
-      }));
+      const indices: MarketIndex[] = data.map(item => {
+        // 确保使用预定义的中文名称，避免乱码
+        const predefinedName = INDEX_CODES[item.code]?.name || item.name;
+        return {
+          code: item.code,
+          name: predefinedName,
+          currentPrice: item.currentPrice,
+          changePercent: item.changePercent,
+          updatedAt: new Date(),
+        };
+      });
 
       // 更新数据库
       await db.indices.bulkPut(indices);

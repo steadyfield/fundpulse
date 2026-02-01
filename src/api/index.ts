@@ -1,4 +1,4 @@
-// 指数数据 API（使用东方财富接口）
+// 指数数据 API（使用腾讯接口）
 
 export interface IndexData {
   code: string;
@@ -8,120 +8,155 @@ export interface IndexData {
   change: number;
 }
 
-// 指数代码映射（东方财富代码格式）
-// 格式：市场代码+指数代码，如 1.000001 表示上证指数
-export const INDEX_CODES: Record<string, { code: string; name: string; market: string }> = {
-  'SH000001': { code: '1.000001', name: '上证指数', market: 'm:1' },
-  'SZ399001': { code: '0.399001', name: '深证成指', market: 'm:0' },
-  'SZ399006': { code: '0.399006', name: '创业板指', market: 'm:0' },
-  // 暂时只支持 A 股指数，海外指数需要其他数据源
-  'HSI': { code: '', name: '恒生指数', market: '' },
-  'IXIC': { code: '', name: '纳斯达克', market: '' },
-  'DJI': { code: '', name: '道琼斯', market: '' },
-  'SPX': { code: '', name: '标普500', market: '' },
+// 指数代码映射（腾讯代码格式）
+// 腾讯格式：sh000001（上证指数），sz399001（深证成指），hkHSI（恒生指数），usIXIC（纳斯达克）
+export const INDEX_CODES: Record<string, { code: string; name: string }> = {
+  // 沪深指数
+  'SH000001': { code: 'sh000001', name: '上证指数' },
+  'SH000016': { code: 'sh000016', name: '上证50' },
+  'SH000300': { code: 'sh000300', name: '沪深300' },
+  'SH000905': { code: 'sh000905', name: '中证500' },
+  'SH000852': { code: 'sh000852', name: '中证1000' },
+  'SH000688': { code: 'sh000688', name: '科创50' },
+  'SZ399001': { code: 'sz399001', name: '深证成指' },
+  'SZ399005': { code: 'sz399005', name: '中小板指' },
+  'SZ399006': { code: 'sz399006', name: '创业板指' },
+  'SZ399002': { code: 'sz399002', name: '深成指R' },
+  'SZ399003': { code: 'sz399003', name: '深证100' },
+  // 港股指数
+  'HSI': { code: 'hkHSI', name: '恒生指数' },
+  'HSCEI': { code: 'hkHSCEI', name: '恒生国企' },
+  'HSTECH': { code: 'hkHSTECH', name: '恒生科技' },
+  // 美股指数
+  'IXIC': { code: 'usIXIC', name: '纳斯达克' },
+  'DJI': { code: 'usDJI', name: '道琼斯' },
+  'SPX': { code: 'usSPX', name: '标普500' },
 };
 
 /**
- * 通过东方财富 API 获取指数数据
- * 使用 push2.eastmoney.com 接口，通过 script 标签加载 JSONP
+ * 解析腾讯返回的数据格式
+ * 腾讯格式：v_hkHSI="1~恒生指数~HSI~21000.5~100~0.5~..."
+ * 字段说明：
+ * parts[0]: 未知
+ * parts[1]: 指数名称
+ * parts[2]: 指数代码
+ * parts[3]: 当前点数
+ * parts[4]: 涨跌额
+ * parts[5]: 涨跌幅（百分比，如 0.5 表示 0.5%）
+ * parts[30]: 更新时间
  */
-const loadEastMoneyIndexData = (code: string): Promise<any> => {
-  return new Promise((resolve, reject) => {
-    // 生成唯一的回调函数名
-    const callbackName = `eastmoney_index_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+const parseTencentFormat = (data: string): IndexData | null => {
+  try {
+    if (!data || typeof data !== 'string') {
+      return null;
+    }
     
+    const parts = data.split('~');
+    if (parts.length < 6) {
+      return null;
+    }
+    
+    const name = parts[1] || '';
+    const code = parts[2] || '';
+    const currentPrice = parseFloat(parts[3]) || 0;
+    const change = parseFloat(parts[4]) || 0;
+    const changePercent = parseFloat(parts[5]) || 0;
+    
+    if (!name || !code || currentPrice === 0) {
+      return null;
+    }
+    
+    return {
+      code,
+      name,
+      currentPrice,
+      change,
+      changePercent,
+    };
+  } catch (error) {
+    console.error('解析腾讯数据失败:', error);
+    return null;
+  }
+};
+
+/**
+ * 获取单个指数数据（使用腾讯 API）
+ */
+const fetchIndexTencent = (tencentCode: string, indexKey: string): Promise<IndexData | null> => {
+  return new Promise((resolve) => {
     const script = document.createElement('script');
-    script.type = 'text/javascript';
-    script.async = true;
+    const callbackName = `v_${tencentCode}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     const cleanup = () => {
       try {
-        document.body.removeChild(script);
+        if (script.parentNode) {
+          document.body.removeChild(script);
+        }
       } catch (e) {
         // ignore
       }
-      delete (window as any)[callbackName];
+      try {
+        delete (window as any)[callbackName];
+      } catch (e) {
+        // ignore
+      }
     };
     
     const timeout = setTimeout(() => {
       cleanup();
-      reject(new Error('请求超时'));
+      resolve(null);
     }, 8000);
     
-    // 设置回调函数
-    (window as any)[callbackName] = (data: any) => {
+    // 腾讯返回格式：v_hkHSI="1~恒生指数~HSI~21000.5~..."
+    (window as any)[callbackName] = (data: string) => {
       clearTimeout(timeout);
       cleanup();
-      resolve(data);
+      
+      if (!data || typeof data !== 'string') {
+        resolve(null);
+        return;
+      }
+      
+      // 移除引号
+      const cleanData = data.replace(/^["']|["']$/g, '');
+      const result = parseTencentFormat(cleanData);
+      
+      if (result) {
+        // 使用预定义的中文名称，避免编码问题导致的乱码
+        const predefinedName = INDEX_CODES[indexKey]?.name || result.name;
+        // 使用 indexKey 作为 code（保持与原有代码兼容）
+        resolve({
+          ...result,
+          code: indexKey,
+          name: predefinedName, // 使用预定义的中文名称
+        });
+      } else {
+        resolve(null);
+      }
     };
     
     script.onerror = () => {
       clearTimeout(timeout);
       cleanup();
-      reject(new Error('网络错误'));
+      resolve(null);
     };
     
-    // 东方财富指数接口（支持 JSONP）
-    // secid 格式：1.000001（上证指数），0.399001（深证成指）
-    // fields: f43=现价, f58=名称, f60=昨收, f170=涨跌幅
-    script.src = `https://push2.eastmoney.com/api/qt/stock/get?secid=${code}&fields=f43,f58,f60,f170&fltt=2&cb=${callbackName}&_=${Date.now()}`;
+    script.src = `http://qt.gtimg.cn/q=${tencentCode}&_callback=${callbackName}`;
     document.body.appendChild(script);
   });
 };
 
 /**
- * 解析东方财富返回的数据
- */
-const parseEastMoneyData = (data: any, indexKey: string): IndexData | null => {
-  try {
-    if (!data || !data.data) {
-      return null;
-    }
-    
-    const d = data.data;
-    // 东方财富返回的价格需要除以100（有些字段需要，有些不需要）
-    // f43: 现价（可能需要除以100）
-    // f60: 昨收（可能需要除以100）
-    // f170: 涨跌幅（百分比，可能需要除以100）
-    const currentPrice = (parseFloat(d.f43) || 0) / 100; // 当前价
-    const yesterdayClose = (parseFloat(d.f60) || currentPrice * 100) / 100; // 昨收
-    const changePercent = (parseFloat(d.f170) || 0) / 100; // 涨跌幅（百分比）
-    const change = currentPrice - yesterdayClose;
-    
-    // 如果价格看起来不合理（太大或太小），尝试不除以100
-    let finalPrice = currentPrice;
-    let finalChangePercent = changePercent;
-    if (currentPrice < 0.01 || currentPrice > 100000) {
-      finalPrice = parseFloat(d.f43) || 0;
-      finalChangePercent = parseFloat(d.f170) || 0;
-    }
-    
-    return {
-      code: indexKey,
-      name: INDEX_CODES[indexKey]?.name || d.f58 || '',
-      currentPrice: finalPrice,
-      changePercent: finalChangePercent,
-      change: finalPrice - yesterdayClose,
-    };
-  } catch (error) {
-    console.error('解析东方财富数据失败:', error);
-    return null;
-  }
-};
-
-/**
- * 获取单个指数数据
+ * 获取单个指数数据（使用腾讯 API）
  */
 export const fetchIndexData = async (indexKey: string): Promise<IndexData | null> => {
   const indexInfo = INDEX_CODES[indexKey];
   if (!indexInfo || !indexInfo.code) {
-    // 海外指数暂时不支持
     return null;
   }
 
   try {
-    const rawData = await loadEastMoneyIndexData(indexInfo.code);
-    return parseEastMoneyData(rawData, indexKey);
+    return await fetchIndexTencent(indexInfo.code, indexKey);
   } catch (error) {
     console.error(`获取指数 ${indexKey} 数据失败:`, error);
     return null;
@@ -129,24 +164,81 @@ export const fetchIndexData = async (indexKey: string): Promise<IndexData | null
 };
 
 /**
- * 批量获取多个指数数据（串行请求，避免并发问题）
+ * 批量获取多个指数数据（使用腾讯批量接口，更高效）
  */
 export const fetchMultipleIndices = async (keys: string[]): Promise<IndexData[]> => {
-  const results: IndexData[] = [];
-  
-  // 串行请求，避免并发导致的数据混乱
-  for (const key of keys) {
-    try {
-      const data = await fetchIndexData(key);
-      if (data) {
-        results.push(data);
-      }
-      // 每个请求之间稍作延迟，避免请求过快
-      await new Promise(resolve => setTimeout(resolve, 100));
-    } catch (error) {
-      console.error(`获取指数 ${key} 失败:`, error);
+  try {
+    // 获取所有腾讯代码
+    const tencentCodes = keys
+      .map(key => {
+        const info = INDEX_CODES[key];
+        return info ? { tencentCode: info.code, indexKey: key } : null;
+      })
+      .filter((item): item is { tencentCode: string; indexKey: string } => item !== null);
+    
+    if (tencentCodes.length === 0) {
+      return [];
     }
+    
+    // 批量请求
+    const codesStr = tencentCodes.map(item => item.tencentCode).join(',');
+    const url = `http://qt.gtimg.cn/q=${codesStr}`;
+    
+    const response = await fetch(url);
+    const text = await response.text();
+    
+    // 解析多行数据：v_hkHSI="..."; v_usIXIC="...";
+    const results: IndexData[] = [];
+    const lines = text.split(';');
+    
+    lines.forEach((line) => {
+      if (!line || !line.includes('=')) {
+        return;
+      }
+      
+      const match = line.match(/v_(\w+)=["']?([^"';]+)["']?/);
+      if (!match || match.length < 3) {
+        return;
+      }
+      
+      const tencentCode = match[1];
+      const dataStr = match[2];
+      
+      // 找到对应的 indexKey
+      const codeInfo = tencentCodes.find(item => item.tencentCode === tencentCode);
+      if (!codeInfo) {
+        return;
+      }
+      
+      const parsed = parseTencentFormat(dataStr);
+      if (parsed) {
+        // 使用预定义的中文名称，避免编码问题导致的乱码
+        const predefinedName = INDEX_CODES[codeInfo.indexKey]?.name || parsed.name;
+        results.push({
+          ...parsed,
+          code: codeInfo.indexKey, // 使用 indexKey 作为 code
+          name: predefinedName, // 使用预定义的中文名称
+        });
+      }
+    });
+    
+    return results;
+  } catch (error) {
+    console.error('批量获取指数数据失败:', error);
+    // 如果批量请求失败，回退到单个请求
+    const results: IndexData[] = [];
+    for (const key of keys) {
+      try {
+        const data = await fetchIndexData(key);
+        if (data) {
+          results.push(data);
+        }
+        // 每个请求之间稍作延迟
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (err) {
+        console.error(`获取指数 ${key} 失败:`, err);
+      }
+    }
+    return results;
   }
-  
-  return results;
 };
