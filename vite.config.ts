@@ -4,6 +4,10 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  // 设置基础路径，用于 GitHub Pages 子路径部署
+  // 如果部署在根路径，设置为 '/'
+  // 如果部署在子路径（如 /fundpulse/），设置为 '/fundpulse/'
+  base: process.env.VITE_BASE_PATH || '/fundpulse/',
   plugins: [
     react(),
     VitePWA({
@@ -36,9 +40,10 @@ export default defineConfig({
         theme_color: '#0b0f19',
         background_color: '#0b0f19',
         display: 'standalone',
+        start_url: '/fundpulse/',
         icons: [
-          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
         ],
       },
     }),
