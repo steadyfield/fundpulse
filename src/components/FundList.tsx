@@ -1,4 +1,4 @@
-import React from 'react';
+import { useState } from 'react';
 import clsx from 'clsx';
 import { useFundStore } from '../store/fundStore';
 import { FundCard } from './FundCard';
@@ -7,14 +7,14 @@ import { validateFundCode } from '../api/eastmoney';
 
 export function FundList() {
   const { watchlist, addFund } = useFundStore();
-  const [showAddModal, setShowAddModal] = React.useState(false);
-  const [showHoldingModal, setShowHoldingModal] = React.useState(false);
-  const [inputCode, setInputCode] = React.useState('');
-  const [isAdding, setIsAdding] = React.useState(false);
-  const [addMessage, setAddMessage] = React.useState('');
-  const [pendingFundCode, setPendingFundCode] = React.useState<string>('');
-  const [holdingAmount, setHoldingAmount] = React.useState<string>('');
-  const [holdingCost, setHoldingCost] = React.useState<string>('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showHoldingModal, setShowHoldingModal] = useState(false);
+  const [inputCode, setInputCode] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+  const [addMessage, setAddMessage] = useState('');
+  const [pendingFundCode, setPendingFundCode] = useState<string>('');
+  const [holdingAmount, setHoldingAmount] = useState<string>('');
+  const [holdingCost, setHoldingCost] = useState<string>('');
 
   const handleAdd = async (code?: string, skipHoldingModal = false) => {
     const codeToAdd = code || inputCode;

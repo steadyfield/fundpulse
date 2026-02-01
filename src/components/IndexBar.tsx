@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useIndexStore } from '../store/indexStore';
 import { useSettingsStore } from '../store/settingsStore';
 import clsx from 'clsx';

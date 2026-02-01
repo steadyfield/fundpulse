@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import clsx from 'clsx';
 import { useFundStore } from '../store/fundStore';
 import { FundModal } from './FundModal';
@@ -210,8 +210,15 @@ export function PortfolioPage() {
                       key={fund.fundCode}
                       className="group hover:bg-white/5 transition-colors"
                     >
-                      <td className="py-4 pl-6">
-                        <div className="font-medium text-text-primary">{fund.fundName}</div>
+                      <td 
+                        className="py-4 pl-6 cursor-pointer hover:bg-white/5 transition-colors group/name"
+                        onClick={() => handleFundClick(fund.fundCode)}
+                        title="点击查看详情"
+                      >
+                        <div className="font-medium text-text-primary group-hover/name:text-neon-blue transition-colors flex items-center gap-2">
+                          {fund.fundName}
+                          <i className="ri-external-link-line text-xs opacity-0 group-hover/name:opacity-100 transition-opacity text-neon-blue" />
+                        </div>
                         <div className="text-xs text-text-tertiary mt-1">
                           {fund.fundCode}
                         </div>

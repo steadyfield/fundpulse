@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import clsx from 'clsx';
 import { useDetailStore } from '../store/detailStore';
 import { useFundStore } from '../store/fundStore';

@@ -1,4 +1,4 @@
-import React from 'react';
+import { useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 import { useDetailStore } from '../store/detailStore';
@@ -16,7 +16,7 @@ export function NavChart() {
   ];
 
   // 数据验证和清理
-  const validHistory = React.useMemo(() => {
+  const validHistory = useMemo(() => {
     if (!navHistory || !Array.isArray(navHistory)) {
       return [];
     }
@@ -26,7 +26,7 @@ export function NavChart() {
   }, [navHistory]);
 
   // 计算统计数据
-  const stats = React.useMemo(() => {
+  const stats = useMemo(() => {
     if (validHistory.length === 0) {
       return null;
     }
@@ -52,7 +52,7 @@ export function NavChart() {
   }, [validHistory]);
 
   // 确保 xAxis 和 series 数据长度一致
-  const chartData = React.useMemo(() => {
+  const chartData = useMemo(() => {
     if (validHistory.length === 0) {
       return { dates: [], values: [] };
     }
@@ -70,7 +70,7 @@ export function NavChart() {
     return { dates, values };
   }, [validHistory]);
 
-  const option: echarts.EChartsOption = React.useMemo(() => {
+  const option: echarts.EChartsOption = useMemo(() => {
     if (chartData.dates.length === 0 || chartData.values.length === 0) {
       return {
         backgroundColor: 'transparent',

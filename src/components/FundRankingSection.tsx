@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import clsx from 'clsx';
 import { fetchFundRanking, RankedFund } from '../api/fundRanking';
 import { useFundStore } from '../store/fundStore';

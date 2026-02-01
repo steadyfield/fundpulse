@@ -1,4 +1,4 @@
-import React from 'react';
+import { useState } from 'react';
 import clsx from 'clsx';
 import { useFundStore } from '../store/fundStore';
 import { useAppStore } from '../store/appStore';
@@ -7,8 +7,8 @@ import { SettingsModal } from './SettingsModal';
 export function Header() {
   const { updateRealtimeData } = useFundStore();
   const { currentView, setCurrentView } = useAppStore();
-  const [isRefreshing, setIsRefreshing] = React.useState(false);
-  const [showSettings, setShowSettings] = React.useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);

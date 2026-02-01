@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useFundStore } from '../store/fundStore';
 import { useAppStore } from '../store/appStore';
 import { IndexBar } from './IndexBar';

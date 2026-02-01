@@ -1,4 +1,4 @@
-import React from 'react';
+import { MouseEvent } from 'react';
 import { useFundStore } from '../store/fundStore';
 import clsx from 'clsx';
 
@@ -26,7 +26,7 @@ export function FundCard({ fund }: FundCardProps) {
     selectFund(isSelected ? null : fund.fundCode);
   };
 
-  const handleRemove = (e: React.MouseEvent) => {
+  const handleRemove = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     if (confirm(`确定要删除 ${fund.fundName} 吗？`)) {
       removeFund(fund.fundCode);
