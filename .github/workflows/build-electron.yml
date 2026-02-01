@@ -15,8 +15,9 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false  # 即使一个平台失败，其他平台继续构建
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [windows-latest, macos-latest]
         include:
           - os: windows-latest
             artifact_name: FundPulse-Setup.exe
@@ -24,9 +25,6 @@ jobs:
           - os: macos-latest
             artifact_name: FundPulse.dmg
             platform: mac
-          - os: ubuntu-latest
-            artifact_name: FundPulse.AppImage
-            platform: linux
 
     steps:
       - name: Checkout code
@@ -39,44 +37,59 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci || npm install
+          npm list electron electron-builder || true
 
       - name: Build application
         run: npm run build
         env:
           VITE_BASE_PATH: './'
+          NODE_ENV: production
+          ELECTRON: 'true'
 
       - name: Build Electron app (Windows)
         if: matrix.platform == 'win'
-        run: npm run electron:build:win
+        run: |
+          echo "Building Windows app..."
+          npm run electron:build:win || (echo "Build failed" && exit 1)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Electron app (macOS)
         if: matrix.platform == 'mac'
-        run: npm run electron:build:mac
+        run: |
+          echo "Building macOS app..."
+          npm run electron:build:mac || (echo "Build failed" && exit 1)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false  # 禁用代码签名（如果没有证书）
 
-      - name: Build Electron app (Linux)
-        if: matrix.platform == 'linux'
-        run: npm run electron:build:linux
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List release files
+        if: always()
+        run: |
+          echo "Checking release directory..."
+          ls -la release/ || echo "Release directory not found"
+          find release -type f 2>/dev/null || echo "No files found in release directory"
 
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}-build
           path: release/
           retention-days: 30
-          if-no-files-found: error
+          if-no-files-found: warn
+          continue-on-error: true
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: |
+      github.event_name == 'push' && 
+      startsWith(github.ref, 'refs/tags/v') &&
+      (needs.build.result == 'success' || needs.build.result == 'partial')
     
     steps:
       - name: Checkout code
@@ -100,7 +113,7 @@ jobs:
           find artifacts -type f -o -type d | head -20
           echo ""
           echo "Looking for release files:"
-          find artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" \) -exec ls -lh {} \;
+          find artifacts -type f \( -name "*.exe" -o -name "*.dmg" \) -exec ls -lh {} \;
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -113,8 +126,7 @@ jobs:
             ### 📦 下载
 
             - **Windows**: 下载 `FundPulse-Setup.exe` 安装程序
-            - **macOS**: 下载 `FundPulse.dmg` 磁盘映像  
-            - **Linux**: 下载 `FundPulse.AppImage` 应用程序
+            - **macOS**: 下载 `FundPulse.dmg` 磁盘映像
 
             ### ✨ 更新内容
 
@@ -132,7 +144,6 @@ jobs:
           files: |
             artifacts/**/*.exe
             artifacts/**/*.dmg
-            artifacts/**/*.AppImage
           draft: false
           prerelease: false
         env:

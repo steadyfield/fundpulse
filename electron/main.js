@@ -16,7 +16,7 @@ function createWindow() {
       enableRemoteModule: false,
       webSecurity: true,
     },
-    icon: path.join(__dirname, '../public/favicon.svg'),
+    icon: path.join(__dirname, '../public/favicon.ico'),
     titleBarStyle: 'default',
     backgroundColor: '#0a0a0f',
     show: false,
