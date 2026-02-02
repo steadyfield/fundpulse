@@ -94,24 +94,63 @@ const initRankDataSetter = () => {
 
         if (v && Array.isArray(v.datas) && v.datas.length > 0) {
           try {
+            // 调试：查看前几条原始数据，检查是否有标志位字段
+            if (v.datas.length > 0) {
+              const sampleRow = v.datas[0];
+              const sampleCols = sampleRow.split(',');
+              console.log('📊 返回数据字段数量:', sampleCols.length);
+              console.log('📊 前3条原始数据示例:', v.datas.slice(0, 3));
+              // 检查是否有可能是标志位的字段（通常在末尾）
+              if (sampleCols.length > 20) {
+                console.log('📊 可能的标志位字段（索引17-25）:', sampleCols.slice(17, 26));
+              }
+            }
+            
             // 解析数据
-            const funds: RankedFund[] = v.datas.map((row: string) => {
-              const cols = row.split(',');
-              return {
-                code: cols[FIELD_INDEX.code] || '',
-                name: cols[FIELD_INDEX.name] || '',
-                type: cols[FIELD_INDEX.type] || '混合型',
-                nav: parseFloat(cols[FIELD_INDEX.nav]) || 0,
-                accNav: parseFloat(cols[FIELD_INDEX.accNav]) || 0,
-                dailyGrowth: parseFloat(cols[FIELD_INDEX.dailyGrowth]) || 0,
-                recent1Week: parseFloat(cols[FIELD_INDEX.recent1Week]) || 0,
-                recent1Month: parseFloat(cols[FIELD_INDEX.recent1Month]) || 0,
-                recent3Month: parseFloat(cols[FIELD_INDEX.recent3Month]) || 0,
-                recent1Year: parseFloat(cols[FIELD_INDEX.recent1Year]) || 0,
-                thisYear: parseFloat(cols[FIELD_INDEX.thisYear]) || 0,
-                manager: cols[FIELD_INDEX.manager] || '-'
-              };
-            });
+            const funds: RankedFund[] = v.datas
+              .map((row: string) => {
+                const cols = row.split(',');
+                return {
+                  code: cols[FIELD_INDEX.code] || '',
+                  name: cols[FIELD_INDEX.name] || '',
+                  type: cols[FIELD_INDEX.type] || '混合型',
+                  nav: parseFloat(cols[FIELD_INDEX.nav]) || 0,
+                  accNav: parseFloat(cols[FIELD_INDEX.accNav]) || 0,
+                  dailyGrowth: parseFloat(cols[FIELD_INDEX.dailyGrowth]) || 0,
+                  recent1Week: parseFloat(cols[FIELD_INDEX.recent1Week]) || 0,
+                  recent1Month: parseFloat(cols[FIELD_INDEX.recent1Month]) || 0,
+                  recent3Month: parseFloat(cols[FIELD_INDEX.recent3Month]) || 0,
+                  recent1Year: parseFloat(cols[FIELD_INDEX.recent1Year]) || 0,
+                  thisYear: parseFloat(cols[FIELD_INDEX.thisYear]) || 0,
+                  manager: cols[FIELD_INDEX.manager] || '-'
+                };
+              })
+              .filter((fund: RankedFund) => {
+                // 过滤掉特殊类型的基金，与天天基金保持一致
+                const name = fund.name.trim();
+                
+                // 过滤掉名称以 "H" 结尾的基金（H类份额，通常不显示在排行榜）
+                // 匹配模式：以 H 结尾，或 H) 结尾，或 (H) 结尾
+                if (/H\)?$/.test(name) || /\(H\)$/.test(name)) {
+                  return false;
+                }
+                
+                // 过滤掉期货类基金（LOF期货基金通常不显示在普通排行榜）
+                // 匹配包含"期货"和"LOF"的基金
+                if (name.includes('期货') && (name.includes('LOF') || name.includes('LO'))) {
+                  return false;
+                }
+                
+                // 过滤掉其他特殊份额后缀（C、E、Y、D、I 等），但保留 A 类
+                // 匹配模式：以特殊字母结尾，且不是 A 类
+                const specialSuffixPattern = /[CEYDI]\)?$/;
+                if (specialSuffixPattern.test(name) && !name.includes('A')) {
+                  return false;
+                }
+                
+                return true;
+              });
+            
             console.log(`✅ 解析成功，数据条数: ${funds.length}`);
             request.resolve(funds);
           } catch (err) {

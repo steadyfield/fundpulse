@@ -33,6 +33,15 @@ export interface NavHistoryItem {
   dailyGrowth?: number;
 }
 
+export interface NavHistoryListItem {
+  date: string; // YYYY-MM-DD
+  nav: number; // 单位净值
+  accNav: number; // 累计净值
+  dailyGrowth: number; // 日增长率 %
+  purchaseStatus: string; // 申购状态
+  redemptionStatus: string; // 赎回状态
+}
+
 // JSONP 请求队列，处理并发请求
 const jsonpQueue: Array<{
   code: string;
@@ -414,7 +423,11 @@ const parseFundBasicInfoFromHTML = (html: string): {
 /**
  * 获取基金基本概况数据（从 FundArchivesDatas.aspx?type=jbgk）
  * 使用 JSONP 形式加载
+ * 
+ * 注意：此接口不稳定，已移除使用，仅保留代码作为参考
+ * @deprecated 已改用 pingzhongdata 接口
  */
+// @ts-expect-error - 保留代码作为参考，但不再使用
 const fetchFundBasicInfoFromJBGK = async (
   fundCode: string
 ): Promise<{
@@ -808,10 +821,9 @@ const requestQueue = new Map<string, Promise<any>>();
 
 /**
  * 获取基金详情（包含重仓股）- 使用新的API方案
- * 1. 优先从 FundArchivesDatas.aspx?type=jbgk 获取基金基本信息
- * 2. 如果失败，回退到 pingzhongdata 方式
- * 3. 从 FundArchivesDatas 获取持仓信息（名称+占比）
- * 4. 从 push2.eastmoney.com 获取股票实时涨跌幅
+ * 1. 从 pingzhongdata 获取基金基本信息（jbgk 接口不稳定，已移除）
+ * 2. 从 FundArchivesDatas.aspx?type=jjcc 获取持仓信息（名称+占比）
+ * 3. 从 push2.eastmoney.com 获取股票实时涨跌幅
  * 
  * 注意：持仓数据获取失败不会影响基本信息返回
  * 使用请求队列避免同一基金代码的并发请求冲突
@@ -835,7 +847,7 @@ export const fetchFundDetail = async (code: string): Promise<{
     try {
       // 步骤1：并行获取基金基本信息和持仓数据，提高加载速度
       const [basicInfoResult, holdingsResult] = await Promise.allSettled([
-        // 获取基金基本信息（优先使用 jbgk 接口）
+        // 获取基金基本信息（直接使用 pingzhongdata 接口，jbgk 接口不稳定）
         (async () => {
           let fundBasicInfo: {
             fundName: string;
@@ -845,23 +857,15 @@ export const fetchFundDetail = async (code: string): Promise<{
           };
           
           try {
-            fundBasicInfo = await fetchFundBasicInfoFromJBGK(code);
-            console.log('从 jbgk 接口获取基金基本信息成功');
-          } catch (error) {
-            console.warn('从 jbgk 接口获取基金基本信息失败，尝试 pingzhongdata:', error);
-            try {
-              fundBasicInfo = await fetchFundBasicInfoFromPingzhong(code);
-              console.log('从 pingzhongdata 获取基金基本信息成功');
-            } catch (pingzhongError) {
-              console.error('获取基金基本信息失败:', pingzhongError);
-              // 即使失败也返回空数据，避免阻塞
-              fundBasicInfo = {
-                fundName: '',
-                manager: '',
-                company: '',
-                inceptionDate: '',
-              };
-            }
+            fundBasicInfo = await fetchFundBasicInfoFromPingzhong(code);
+          } catch (pingzhongError) {
+            // 即使失败也返回空数据，避免阻塞
+            fundBasicInfo = {
+              fundName: '',
+              manager: '',
+              company: '',
+              inceptionDate: '',
+            };
           }
           
           // 如果基本信息中没有基金名称，尝试从实时数据接口获取
@@ -870,10 +874,9 @@ export const fetchFundDetail = async (code: string): Promise<{
               const realtimeData = await fetchFundRealtime(code);
               if (realtimeData.name) {
                 fundBasicInfo.fundName = realtimeData.name;
-                console.log(`从实时数据接口获取基金名称: ${realtimeData.name}`);
               }
             } catch (error) {
-              console.warn('从实时数据接口获取基金名称失败:', error);
+              // 静默失败，不影响主流程
             }
           }
           
@@ -904,7 +907,7 @@ export const fetchFundDetail = async (code: string): Promise<{
             }
             return [];
           } catch (error) {
-            console.warn('获取持仓数据失败:', error);
+            // 静默失败，不影响主流程
             return [];
           }
         })(),
@@ -947,6 +950,111 @@ export const fetchFundDetail = async (code: string): Promise<{
 /**
  * 验证基金代码是否存在
  */
+/**
+ * 获取基金历史净值列表（从 lsjz API）
+ * @param code 基金代码
+ * @param pageIndex 页码，从1开始
+ * @param pageSize 每页数量，默认20
+ * @returns 历史净值列表
+ */
+export const fetchFundNavHistoryList = async (
+  code: string,
+  pageIndex: number = 1,
+  pageSize: number = 20
+): Promise<NavHistoryListItem[]> => {
+  return new Promise((resolve, reject) => {
+    const callbackName = `jQuery${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const script = document.createElement('script');
+    
+    const timeout = setTimeout(() => {
+      try {
+        if (script.parentNode) {
+          script.parentNode.removeChild(script);
+        }
+      } catch (e) {
+        // ignore
+      }
+      // 清理回调函数
+      try {
+        delete (window as any)[callbackName];
+      } catch (e) {
+        // ignore
+      }
+      reject(new Error('请求超时'));
+    }, 20000);
+
+    // 设置全局回调函数
+    (window as any)[callbackName] = (data: any) => {
+      clearTimeout(timeout);
+      try {
+        if (script.parentNode) {
+          script.parentNode.removeChild(script);
+        }
+      } catch (e) {
+        // ignore
+      }
+      
+      // 清理回调函数
+      try {
+        delete (window as any)[callbackName];
+      } catch (e) {
+        // ignore
+      }
+
+      try {
+        if (!data || !data.Data || !data.Data.LSJZList) {
+          reject(new Error('数据格式错误'));
+          return;
+        }
+
+        const list: NavHistoryListItem[] = data.Data.LSJZList.map((item: any) => {
+          const date = item.FSRQ || ''; // 净值日期
+          const nav = parseFloat(item.DWJZ) || 0; // 单位净值
+          const accNav = parseFloat(item.LJJZ) || nav; // 累计净值
+          const dailyGrowth = parseFloat(item.JZZZL) || 0; // 日增长率
+          const purchaseStatus = item.SGZT || ''; // 申购状态
+          const redemptionStatus = item.SHZT || ''; // 赎回状态
+
+          return {
+            date,
+            nav,
+            accNav,
+            dailyGrowth,
+            purchaseStatus,
+            redemptionStatus,
+          };
+        });
+
+        resolve(list);
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error('解析数据失败'));
+      }
+    };
+
+    script.onerror = () => {
+      clearTimeout(timeout);
+      try {
+        if (script.parentNode) {
+          script.parentNode.removeChild(script);
+        }
+      } catch (e) {
+        // ignore
+      }
+      // 清理回调函数
+      try {
+        delete (window as any)[callbackName];
+      } catch (e) {
+        // ignore
+      }
+      reject(new Error('网络错误'));
+    };
+
+    const url = `https://api.fund.eastmoney.com/f10/lsjz?callback=${callbackName}&fundCode=${code}&pageIndex=${pageIndex}&pageSize=${pageSize}&startDate=&endDate=&_=${Date.now()}`;
+    script.src = url;
+    document.body.appendChild(script);
+  });
+};
+
 export const validateFundCode = async (code: string): Promise<{ valid: boolean; name?: string }> => {
   try {
     const data = await fetchFundRealtime(code);

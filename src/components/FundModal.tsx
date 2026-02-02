@@ -4,6 +4,7 @@ import { useDetailStore } from '../store/detailStore';
 import { useFundStore } from '../store/fundStore';
 import { NavChart } from './NavChart';
 import { TopHoldings } from './TopHoldings';
+import { NavHistoryList } from './NavHistoryList';
 import { fetchFundRealtime } from '../api/eastmoney';
 
 interface FundModalProps {
@@ -12,7 +13,7 @@ interface FundModalProps {
   fundCode: string;
 }
 
-type TabId = 'overview' | 'chart' | 'holdings' | 'ai';
+type TabId = 'overview' | 'chart' | 'history' | 'holdings' | 'ai';
 
 export function FundModal({ isOpen, onClose, fundCode }: FundModalProps) {
   const { fundDetail, loadFundDetail, loadNavHistory } = useDetailStore();
@@ -62,6 +63,7 @@ export function FundModal({ isOpen, onClose, fundCode }: FundModalProps) {
 
   const tabs = [
     { id: 'chart' as TabId, label: '净值走势', icon: 'ri-line-chart-line' },
+    { id: 'history' as TabId, label: '历史净值', icon: 'ri-history-line' },
     { id: 'holdings' as TabId, label: '重仓股票', icon: 'ri-stack-line' },
     { id: 'overview' as TabId, label: '基金概况', icon: 'ri-file-list-line' },
     { id: 'ai' as TabId, label: '🤖 AI 诊断', icon: 'ri-robot-2-line', highlight: true },
@@ -134,6 +136,7 @@ export function FundModal({ isOpen, onClose, fundCode }: FundModalProps) {
             <FundOverview fundDetail={fundDetail} fund={fund} />
           )}
           {activeTab === 'chart' && <NavChart />}
+          {activeTab === 'history' && <NavHistoryList fundCode={fundCode} />}
           {activeTab === 'holdings' && <TopHoldings />}
           {activeTab === 'ai' && <AIDiagnosis />}
         </div>
