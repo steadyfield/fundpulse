@@ -44,7 +44,6 @@ const CATEGORIES = [
  * - 底部：涨跌额（左，箭头+数字）+ 涨跌幅（右，红绿pill）
  */
 function IndexCard({
-  rank,
   name,
   code,
   price,
@@ -52,7 +51,6 @@ function IndexCard({
   changePercent,
   pe,
 }: {
-  rank: number;
   name: string;
   code: string;
   price: number;
@@ -63,54 +61,52 @@ function IndexCard({
   const isUp = change >= 0;
 
   return (
-    <div className="relative flex-shrink-0 w-[100px] h-[70px] sm:w-[120px] sm:h-[84px] md:w-[140px] md:h-[98px] lg:w-[160px] lg:h-[112px] xl:w-[200px] xl:h-[140px] p-2 sm:p-2.5 md:p-3 lg:p-3.5 xl:p-4 rounded-xl sm:rounded-xl md:rounded-xl lg:rounded-2xl bg-white/[0.03] border border-white/[0.08] backdrop-blur-sm hover:border-white/20 transition-all group overflow-hidden flex flex-col">
+    <div className="relative flex-shrink-0 w-[55px] h-[42px] sm:w-[70px] sm:h-[52px] md:w-[90px] md:h-[64px] lg:w-[110px] lg:h-[76px] xl:w-[135px] xl:h-[93px] p-1 sm:p-1.5 md:p-2 lg:p-2.5 xl:p-3 rounded-md sm:rounded-lg md:rounded-xl lg:rounded-xl xl:rounded-2xl bg-white/[0.03] border border-white/[0.08] backdrop-blur-sm hover:border-white/20 transition-all group overflow-hidden flex flex-col">
       {/* 顶部行：名称（左） + PE（右） */}
-      <div className="flex items-start justify-between flex-shrink-0">
-        <div className="flex-1 min-w-0">
-          <div className="text-[10px] sm:text-[11px] md:text-xs lg:text-sm font-medium text-text-primary tracking-wide truncate">
+      <div className="flex items-start justify-between flex-shrink-0 mb-0.5">
+        <div className="flex-1 min-w-0 pr-1">
+          <div className="text-[6px] sm:text-[7px] md:text-[8px] lg:text-[9px] xl:text-[10px] font-medium text-text-primary tracking-wide truncate leading-tight">
             {name || code}
           </div>
-          <div className="text-[8px] sm:text-[9px] md:text-[10px] lg:text-[11px] text-text-tertiary font-mono mt-0.5 tracking-wider opacity-70">
+          <div className="hidden sm:block text-[5px] sm:text-[5px] md:text-[6px] lg:text-[7px] text-text-tertiary font-mono mt-0.5 tracking-wider opacity-70 leading-tight">
             {code}
           </div>
         </div>
 
         {/* PE 放右上角，弱化显示（灰色小字） */}
         {pe > 0 ? (
-          <div className="text-[8px] sm:text-[9px] md:text-[10px] lg:text-[11px] text-text-tertiary font-mono flex items-center gap-0.5 opacity-60">
-            <span className="text-[7px] sm:text-[8px] md:text-[9px] lg:text-[10px]">PE</span>
+          <div className="text-[5px] sm:text-[5px] md:text-[6px] lg:text-[7px] text-text-tertiary font-mono flex items-center gap-0.5 opacity-60 shrink-0">
+            <span className="text-[4px] sm:text-[4px] md:text-[5px] lg:text-[6px]">PE</span>
             <span>{pe.toFixed(1)}</span>
           </div>
         ) : null}
       </div>
 
       {/* 中部：最新价（绝对主角，垂直居中） */}
-      <div className="flex-1 flex items-center justify-center my-0.5 sm:my-1">
-        <div className="text-[14px] sm:text-[18px] md:text-[22px] lg:text-[26px] xl:text-[32px] font-mono font-bold text-white tracking-tighter tabular-nums leading-none group-hover:scale-[1.02] transition-transform">
+      <div className="flex-1 flex items-center justify-center min-h-0 py-0.5">
+        <div className="text-[8px] sm:text-[9px] md:text-[11px] lg:text-[14px] xl:text-[18px] font-mono font-bold text-white tracking-tighter tabular-nums leading-none group-hover:scale-[1.02] transition-transform">
           <FlipNumber value={price} decimals={2} />
         </div>
       </div>
 
       {/* 底部行：涨跌额（左） + 涨跌幅（右 pill） */}
-      <div className="flex items-center justify-between pt-1 sm:pt-1.5 md:pt-2 border-t border-white/5 mt-auto flex-shrink-0">
+      <div className="flex items-center justify-between pt-0.5 sm:pt-1 border-t border-white/5 flex-shrink-0 min-h-[11px] sm:min-h-[13px]">
         {/* 涨跌额：符号 ↑↓ 直接暗示含义 */}
         <div
           className={clsx(
-            'flex items-center gap-0.5 text-[9px] sm:text-[10px] md:text-xs lg:text-sm font-mono font-medium',
+            'flex items-center gap-0.5 text-[5px] sm:text-[6px] md:text-[7px] lg:text-[8px] xl:text-[9px] font-mono font-medium leading-tight',
             isUp ? 'text-red-400' : 'text-green-400'
           )}
         >
-          <span className="text-[7px] sm:text-[8px] md:text-xs opacity-80">{isUp ? '↑' : '↓'}</span>
+          <span className="text-[4px] sm:text-[5px] md:text-[6px] opacity-80">{isUp ? '↑' : '↓'}</span>
           <FlipNumber value={Math.abs(change)} decimals={2} />
         </div>
 
-        {/* 涨跌幅：红绿pill，最显眼的颜色标识 */}
+        {/* 涨跌幅：纯文字显示，无背景和边框 */}
         <div
           className={clsx(
-            'px-1 sm:px-1.5 md:px-2 py-0.5 rounded text-[8px] sm:text-[9px] md:text-xs font-bold font-mono',
-            isUp
-              ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-              : 'bg-green-500/20 text-green-400 border border-green-500/30'
+            'text-[5px] sm:text-[6px] md:text-[7px] lg:text-[8px] xl:text-[9px] font-bold font-mono leading-tight whitespace-nowrap shrink-0',
+            isUp ? 'text-red-400' : 'text-green-400'
           )}
         >
           {isUp ? '+' : ''}
@@ -121,7 +117,7 @@ function IndexCard({
       {/* 背景光晕（根据涨跌） */}
       <div
         className={clsx(
-          'absolute -bottom-3 sm:-bottom-4 md:-bottom-5 lg:-bottom-6 -right-3 sm:-right-4 md:-right-5 lg:-right-6 w-14 sm:w-16 md:w-20 lg:w-24 xl:w-28 h-14 sm:h-16 md:h-20 lg:h-24 xl:h-28 rounded-full blur-3xl opacity-10 group-hover:opacity-20 transition-opacity pointer-events-none',
+          'absolute -bottom-1.5 sm:-bottom-2 md:-bottom-3 lg:-bottom-4 xl:-bottom-5 -right-1.5 sm:-right-2 md:-right-3 lg:-right-4 xl:-right-5 w-8 sm:w-10 md:w-12 lg:w-16 xl:w-20 h-8 sm:h-10 md:h-12 lg:h-16 xl:h-20 rounded-full blur-3xl opacity-10 group-hover:opacity-20 transition-opacity pointer-events-none',
           isUp ? 'bg-red-500' : 'bg-green-500'
         )}
       />
@@ -366,7 +362,7 @@ export function IndexSection() {
           <div
             ref={containerRef}
             className={clsx(
-              'flex gap-1.5 sm:gap-2 md:gap-3 pb-1',
+              'flex gap-1 sm:gap-1.5 md:gap-2 lg:gap-2.5 pb-1',
               shouldScroll
                 ? 'overflow-x-auto scrollbar-hide cursor-grab'
                 : 'overflow-hidden justify-center items-center',
@@ -374,7 +370,9 @@ export function IndexSection() {
             )}
             style={shouldScroll ? { 
               overflowX: 'auto',
-              WebkitOverflowScrolling: 'touch' // iOS 平滑滚动
+              WebkitOverflowScrolling: 'touch', // iOS 平滑滚动
+              scrollPaddingLeft: '4px',
+              scrollPaddingRight: '4px'
             } : { 
               justifyContent: 'center',
               overflowX: 'hidden'
@@ -385,10 +383,9 @@ export function IndexSection() {
             onMouseLeave={shouldScroll ? handleMouseLeave : undefined}
           >
             {/* 只显示一份数据，不重复 */}
-            {indices.map((idx, i) => (
+            {indices.map((idx) => (
               <IndexCard
                 key={idx.code}
-                rank={i + 1}
                 name={idx.name}
                 code={idx.code}
                 price={idx.price}

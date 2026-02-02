@@ -45,22 +45,25 @@ export function Header() {
           zIndex: 100
         }}
       >
-        <div className="container mx-auto px-4 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              <i className="ri-bar-chart-grouped-line text-4xl text-neon-red" />
-              <h1 className="text-3xl font-display font-bold">
-                FundPulse <span className="text-neon-red">2.0</span>
+        <div className="container mx-auto px-2 sm:px-3 md:px-4 h-14 sm:h-16 md:h-20 flex items-center justify-between">
+          {/* 品牌标识 - 移动端优化 */}
+          <div className="flex items-center gap-2 sm:gap-4 md:gap-6 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3">
+              <i className="ri-bar-chart-grouped-line text-2xl sm:text-3xl md:text-4xl text-neon-red" />
+              <h1 className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-display font-bold whitespace-nowrap">
+                <span className="hidden sm:inline">FundPulse</span>
+                <span className="sm:hidden">FP</span>
+                <span className="text-neon-red ml-1 sm:ml-1.5">2.0</span>
               </h1>
             </div>
           </div>
 
-          {/* 导航切换 - 优雅设计 */}
-          <nav className="flex items-center gap-0.5 bg-white/5 backdrop-blur-xl rounded-xl p-1 border border-white/10 shadow-lg">
+          {/* 导航切换 - 移动端优化 */}
+          <nav className="flex items-center gap-0.5 bg-white/5 backdrop-blur-xl rounded-lg sm:rounded-xl p-0.5 sm:p-1 border border-white/10 shadow-lg mx-2 sm:mx-4 flex-1 justify-center max-w-fit sm:max-w-none">
             <button
               onClick={() => setCurrentView('home')}
               className={clsx(
-                'px-8 py-2.5 rounded-lg text-base font-medium transition-all duration-300 relative overflow-hidden',
+                'px-3 sm:px-5 md:px-8 py-1.5 sm:py-2 md:py-2.5 rounded-md sm:rounded-lg text-xs sm:text-sm md:text-base font-medium transition-all duration-300 relative overflow-hidden',
                 'hover:bg-white/5 active:bg-white/10 active:scale-95',
                 currentView === 'home'
                   ? 'text-white'
@@ -70,8 +73,8 @@ export function Header() {
               {/* 选中背景 - 优雅的渐变 */}
               {currentView === 'home' && (
                 <>
-                  <span className="absolute inset-0 bg-gradient-to-br from-white/15 via-white/10 to-white/5 rounded-lg" />
-                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-0.5 bg-gradient-to-r from-transparent via-neon-blue to-transparent rounded-full opacity-80" />
+                  <span className="absolute inset-0 bg-gradient-to-br from-white/15 via-white/10 to-white/5 rounded-md sm:rounded-lg" />
+                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 sm:w-10 md:w-12 h-0.5 bg-gradient-to-r from-transparent via-neon-blue to-transparent rounded-full opacity-80" />
                 </>
               )}
               <span className="relative z-10">首页</span>
@@ -79,7 +82,7 @@ export function Header() {
             <button
               onClick={() => setCurrentView('portfolio')}
               className={clsx(
-                'px-8 py-2.5 rounded-lg text-base font-medium transition-all duration-300 relative overflow-hidden',
+                'px-3 sm:px-5 md:px-8 py-1.5 sm:py-2 md:py-2.5 rounded-md sm:rounded-lg text-xs sm:text-sm md:text-base font-medium transition-all duration-300 relative overflow-hidden',
                 'hover:bg-white/5 active:bg-white/10 active:scale-95',
                 currentView === 'portfolio'
                   ? 'text-white'
@@ -89,42 +92,43 @@ export function Header() {
               {/* 选中背景 - 优雅的渐变 */}
               {currentView === 'portfolio' && (
                 <>
-                  <span className="absolute inset-0 bg-gradient-to-br from-white/15 via-white/10 to-white/5 rounded-lg" />
-                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-0.5 bg-gradient-to-r from-transparent via-neon-blue to-transparent rounded-full opacity-80" />
+                  <span className="absolute inset-0 bg-gradient-to-br from-white/15 via-white/10 to-white/5 rounded-md sm:rounded-lg" />
+                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 sm:w-10 md:w-12 h-0.5 bg-gradient-to-r from-transparent via-neon-blue to-transparent rounded-full opacity-80" />
                 </>
               )}
               <span className="relative z-10">自选</span>
             </button>
           </nav>
 
-          <div className="flex items-center gap-4">
+          {/* 右侧操作按钮 - 移动端优化 */}
+          <div className="flex items-center gap-1 sm:gap-2 md:gap-4 shrink-0">
             <a
               href="https://github.com/lighting-ai/fundpulse"
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2 text-text-secondary hover:text-text-primary hover:text-neon-blue active:text-neon-blue active:scale-90 transition-all duration-150 rounded-lg hover:bg-white/5 active:bg-white/10"
+              className="p-1.5 sm:p-2 text-text-secondary hover:text-text-primary hover:text-neon-blue active:text-neon-blue active:scale-90 transition-all duration-150 rounded-lg hover:bg-white/5 active:bg-white/10"
               title="GitHub 开源地址"
             >
-              <i className="ri-github-fill text-xl" />
+              <i className="ri-github-fill text-lg sm:text-xl" />
             </a>
             <button
               onClick={handleRefresh}
-              className="p-2 text-text-secondary hover:text-text-primary active:text-neon-blue active:scale-90 transition-all duration-150 rounded-lg hover:bg-white/5 active:bg-white/10"
+              className="p-1.5 sm:p-2 text-text-secondary hover:text-text-primary active:text-neon-blue active:scale-90 transition-all duration-150 rounded-lg hover:bg-white/5 active:bg-white/10"
               title="刷新数据"
             >
               <i
                 className={clsx(
-                  'ri-refresh-line text-xl',
+                  'ri-refresh-line text-lg sm:text-xl',
                   isRefreshing && 'refreshing'
                 )}
               />
             </button>
             <button
               onClick={() => setShowSettings(true)}
-              className="p-2 text-text-secondary hover:text-text-primary active:text-neon-blue active:scale-90 transition-all duration-150 rounded-lg hover:bg-white/5 active:bg-white/10"
+              className="p-1.5 sm:p-2 text-text-secondary hover:text-text-primary active:text-neon-blue active:scale-90 transition-all duration-150 rounded-lg hover:bg-white/5 active:bg-white/10"
               title="设置"
             >
-              <i className="ri-settings-3-line text-xl" />
+              <i className="ri-settings-3-line text-lg sm:text-xl" />
             </button>
           </div>
         </div>
