@@ -1,16 +1,18 @@
 import { create } from 'zustand';
 import { db, FundDetail, NavHistory } from '../db/schema';
-import { fetchFundDetail, fetchFundHistory } from '../api/eastmoney';
+import { fetchFundDetail, fetchFundHistory, fetchFundOverviewData, FundOverviewData } from '../api/eastmoney';
 
 interface DetailStore {
   fundDetail: FundDetail | null;
   navHistory: NavHistory[];
+  overviewData: FundOverviewData | null;
   isLoading: boolean;
   error: string | null;
   timeRange: '30d' | '3m' | '6m' | '1y' | 'all';
 
   loadFundDetail: (code: string) => Promise<void>;
   loadNavHistory: (code: string, range?: DetailStore['timeRange']) => Promise<void>;
+  loadOverviewData: (code: string) => Promise<void>;
   setTimeRange: (range: DetailStore['timeRange']) => void;
 }
 
@@ -20,6 +22,7 @@ const loadingNavHistory = new Set<string>();
 export const useDetailStore = create<DetailStore>((set, get) => ({
   fundDetail: null,
   navHistory: [],
+  overviewData: null,
   isLoading: false,
   error: null,
   timeRange: '30d',
@@ -143,6 +146,20 @@ export const useDetailStore = create<DetailStore>((set, get) => ({
       set({ error: error instanceof Error ? error.message : '加载失败' });
     } finally {
       loadingNavHistory.delete(requestKey);
+      set({ isLoading: false });
+    }
+  },
+
+  // 加载基金概况数据
+  loadOverviewData: async (code: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const overviewData = await fetchFundOverviewData(code);
+      set({ overviewData });
+    } catch (error) {
+      console.warn('获取基金概况数据失败:', error);
+      set({ overviewData: null });
+    } finally {
       set({ isLoading: false });
     }
   },

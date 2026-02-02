@@ -13,6 +13,11 @@ export function Header() {
   const [showSettings, setShowSettings] = useState(false);
 
   const handleRefresh = async () => {
+    if (currentView === 'faq') {
+      // FAQ 页面不需要刷新
+      return;
+    }
+    
     setIsRefreshing(true);
     try {
       if (currentView === 'home') {
@@ -63,7 +68,7 @@ export function Header() {
             <button
               onClick={() => setCurrentView('home')}
               className={clsx(
-                'px-3 sm:px-5 md:px-8 py-1.5 sm:py-2 md:py-2.5 rounded-md sm:rounded-lg text-xs sm:text-sm md:text-base font-medium transition-all duration-300 relative overflow-hidden',
+                'px-2 sm:px-4 md:px-6 py-1.5 sm:py-2 md:py-2.5 rounded-md sm:rounded-lg text-xs sm:text-sm md:text-base font-medium transition-all duration-300 relative overflow-hidden',
                 'hover:bg-white/5 active:bg-white/10 active:scale-95',
                 currentView === 'home'
                   ? 'text-white'
@@ -82,7 +87,7 @@ export function Header() {
             <button
               onClick={() => setCurrentView('portfolio')}
               className={clsx(
-                'px-3 sm:px-5 md:px-8 py-1.5 sm:py-2 md:py-2.5 rounded-md sm:rounded-lg text-xs sm:text-sm md:text-base font-medium transition-all duration-300 relative overflow-hidden',
+                'px-2 sm:px-4 md:px-6 py-1.5 sm:py-2 md:py-2.5 rounded-md sm:rounded-lg text-xs sm:text-sm md:text-base font-medium transition-all duration-300 relative overflow-hidden',
                 'hover:bg-white/5 active:bg-white/10 active:scale-95',
                 currentView === 'portfolio'
                   ? 'text-white'
@@ -97,6 +102,25 @@ export function Header() {
                 </>
               )}
               <span className="relative z-10">自选</span>
+            </button>
+            <button
+              onClick={() => setCurrentView('faq')}
+              className={clsx(
+                'px-2 sm:px-4 md:px-6 py-1.5 sm:py-2 md:py-2.5 rounded-md sm:rounded-lg text-xs sm:text-sm md:text-base font-medium transition-all duration-300 relative overflow-hidden',
+                'hover:bg-white/5 active:bg-white/10 active:scale-95',
+                currentView === 'faq'
+                  ? 'text-white'
+                  : 'text-text-secondary hover:text-text-primary'
+              )}
+            >
+              {/* 选中背景 - 优雅的渐变 */}
+              {currentView === 'faq' && (
+                <>
+                  <span className="absolute inset-0 bg-gradient-to-br from-white/15 via-white/10 to-white/5 rounded-md sm:rounded-lg" />
+                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 sm:w-10 md:w-12 h-0.5 bg-gradient-to-r from-transparent via-neon-blue to-transparent rounded-full opacity-80" />
+                </>
+              )}
+              <span className="relative z-10">FAQ</span>
             </button>
           </nav>
 

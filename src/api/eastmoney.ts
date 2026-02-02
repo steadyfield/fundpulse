@@ -92,14 +92,29 @@ const jsonpQueue: Array<{
   });
 
   // 解析并返回数据
-  request.resolve({
+  const result = {
     code: fundCode,
     name: data.name || '',
-    nav: parseFloat(data.dwjz) || 0, // 最新净值
-    estimateNav: parseFloat(data.gsz) || 0, // 估算净值（盘中实时）
-    estimateGrowth: parseFloat(data.gszzl) || 0, // 估算涨跌幅 %
+    nav: parseFloat(data.dwjz) || 0, // dwjz: 昨日收盘净值
+    estimateNav: parseFloat(data.gsz) || 0, // gsz: 估算净值（盘中实时）
+    estimateGrowth: parseFloat(data.gszzl) || 0, // gszzl: 估算涨跌幅 %
     valuationTime: data.gztime || '', // 估值时间
+  };
+  
+  // 调试日志：输出原始 API 数据
+  console.log(`[API 原始数据] 基金 ${fundCode}:`, {
+    dwjz: data.dwjz,
+    gsz: data.gsz,
+    gszzl: data.gszzl,
+    gztime: data.gztime,
+    parsed: {
+      nav: result.nav,
+      estimateNav: result.estimateNav,
+      estimateGrowth: result.estimateGrowth,
+    },
   });
+  
+  request.resolve(result);
 };
 
 /**
@@ -136,6 +151,199 @@ export const fetchFundRealtime = async (code: string): Promise<RealtimeData> => 
       }
     };
     document.body.appendChild(script);
+  });
+};
+
+/**
+ * 获取原始的 Data_netWorthTrend 数据（不转换格式）
+ * 用于 FundDataManager 进行盘中和盘后的数据融合
+ */
+// 请求队列：确保同一时间只有一个请求在处理，避免全局变量冲突
+let isProcessingRequest = false;
+const netWorthTrendRequestQueue: Array<{
+  code: string;
+  resolve: (data: Array<{ x: number; y: number; equityReturn?: number }>) => void;
+  reject: (error: Error) => void;
+}> = [];
+
+/**
+ * 处理队列中的下一个请求
+ */
+const processNextRequest = async () => {
+  if (isProcessingRequest || netWorthTrendRequestQueue.length === 0) {
+    return;
+  }
+  
+  isProcessingRequest = true;
+  const request = netWorthTrendRequestQueue.shift()!;
+  const { code, resolve, reject } = request;
+  
+  try {
+    const data = await fetchNetWorthTrendInternal(code);
+    resolve(data);
+  } catch (error) {
+    reject(error instanceof Error ? error : new Error('未知错误'));
+  } finally {
+    isProcessingRequest = false;
+    // 处理下一个请求
+    processNextRequest();
+  }
+};
+
+/**
+ * 内部实现：实际执行单个请求
+ */
+const fetchNetWorthTrendInternal = async (code: string): Promise<Array<{ x: number; y: number; equityReturn?: number }>> => {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.type = 'text/javascript';
+    script.async = true;
+    
+    // 增加超时时间到 30 秒
+    const timeout = setTimeout(() => {
+      try {
+        if (script.parentNode) {
+          document.body.removeChild(script);
+        }
+      } catch (e) {
+        // ignore
+      }
+      reject(new Error('请求超时'));
+    }, 30000);
+    
+    // 保存脚本 URL，用于验证数据来源
+    const scriptUrl = `https://fund.eastmoney.com/pingzhongdata/${code}.js`;
+    let dataLoaded = false;
+    
+    script.onerror = (error) => {
+      clearTimeout(timeout);
+      try {
+        if (script.parentNode) {
+          document.body.removeChild(script);
+        }
+      } catch (e) {
+        // ignore
+      }
+      reject(new Error(`网络错误: ${error}`));
+    };
+    
+    script.onload = () => {
+      // 脚本加载完成后，立即读取数据
+      // 使用递归检查，确保脚本完全执行
+      const checkData = (attempt: number) => {
+        if (dataLoaded) return;
+        
+        // 验证 script.src 是否包含当前基金代码（确保数据来源正确）
+        const currentScriptSrc = script.src || '';
+        if (!currentScriptSrc.includes(code)) {
+          // 脚本 URL 不匹配，可能是其他基金的脚本，继续等待
+          if (attempt < 100) { // 最多等待 10 秒（100 * 100ms）
+            setTimeout(() => checkData(attempt + 1), 100);
+          } else {
+            clearTimeout(timeout);
+            try {
+              if (script.parentNode) {
+                document.body.removeChild(script);
+              }
+            } catch (e) {
+              // ignore
+            }
+            reject(new Error(`数据加载超时：脚本 URL 不匹配`));
+          }
+          return;
+        }
+        
+        // 读取全局变量中的数据
+        // 由于使用了请求队列，同一时间只有一个请求在处理，所以全局变量应该是当前脚本设置的值
+        const data = (window as any).Data_netWorthTrend;
+        
+        if (data && Array.isArray(data) && data.length > 0) {
+          // 立即解析并保存数据，避免被后续脚本覆盖
+          try {
+            const trend: Array<{ x: number; y: number; equityReturn?: number }> = [];
+            // 深拷贝数据，避免引用全局变量
+            data.forEach((item: any) => {
+              if (item && typeof item === 'object' && item.x && item.y) {
+                trend.push({
+                  x: item.x,
+                  y: parseFloat(item.y) || 0,
+                  equityReturn: item.equityReturn ? parseFloat(item.equityReturn) : undefined,
+                });
+              }
+            });
+            
+            if (trend.length > 0 && !dataLoaded) {
+              dataLoaded = true;
+              clearTimeout(timeout);
+              
+              try {
+                if (script.parentNode) {
+                  document.body.removeChild(script);
+                }
+              } catch (e) {
+                // ignore
+              }
+              
+              // 立即 resolve，使用深拷贝的数据，不依赖全局变量
+              resolve(trend);
+            }
+          } catch (e) {
+            if (attempt < 100) {
+              setTimeout(() => checkData(attempt + 1), 100);
+            } else {
+              clearTimeout(timeout);
+              try {
+                if (script.parentNode) {
+                  document.body.removeChild(script);
+                }
+              } catch (e) {
+                // ignore
+              }
+              reject(e);
+            }
+          }
+        } else {
+          // 数据还未准备好，继续检查
+          if (attempt < 100) {
+            setTimeout(() => checkData(attempt + 1), 100);
+          } else {
+            clearTimeout(timeout);
+            try {
+              if (script.parentNode) {
+                document.body.removeChild(script);
+              }
+            } catch (e) {
+              // ignore
+            }
+            reject(new Error(`数据加载超时：数据格式错误或为空`));
+          }
+        }
+      };
+      
+      // 开始检查数据（延迟 100ms 让脚本执行完成）
+      setTimeout(() => checkData(0), 100);
+    };
+    
+    const url = `${scriptUrl}?v=${Date.now()}`;
+    script.src = url;
+    
+    document.body.appendChild(script);
+  });
+};
+
+/**
+ * 获取原始的 Data_netWorthTrend 数据（不转换格式）
+ * 用于 FundDataManager 进行盘中和盘后的数据融合
+ * 
+ * 重要：每个基金的数据独立处理，使用请求队列确保同一时间只有一个请求在处理
+ * 避免全局变量冲突导致的数据混乱
+ */
+export const fetchNetWorthTrend = async (code: string): Promise<Array<{ x: number; y: number; equityReturn?: number }>> => {
+  return new Promise((resolve, reject) => {
+    // 将请求加入队列
+    netWorthTrendRequestQueue.push({ code, resolve, reject });
+    // 尝试处理队列
+    processNextRequest();
   });
 };
 
@@ -187,8 +395,29 @@ export const fetchFundHistory = async (code: string): Promise<NavHistoryItem[]> 
           const history: NavHistoryItem[] = [];
           if (Array.isArray(data)) {
             data.forEach((item: any) => {
-              if (item && typeof item === 'object') {
-                const date = item.x ? new Date(item.x).toISOString().split('T')[0] : '';
+              if (item && typeof item === 'object' && item.x) {
+                // 修复时区问题：时间戳转换为日期字符串
+                // 时间戳应该按照本地时区解析（因为基金数据通常按本地日期）
+                const timestamp = item.x;
+                const dateObj = new Date(timestamp);
+                
+                // 使用本地时区方法获取年月日（因为基金净值日期通常是按本地日期）
+                const year = dateObj.getFullYear();
+                const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const day = String(dateObj.getDate()).padStart(2, '0');
+                const date = `${year}-${month}-${day}`;
+                
+                // 调试日志：输出时间戳和转换后的日期
+                console.log(`[历史净值解析] 时间戳: ${timestamp}, 转换后日期: ${date}`, {
+                  timestamp,
+                  date,
+                  UTC: dateObj.toISOString(),
+                  local: dateObj.toLocaleString('zh-CN'),
+                  getFullYear: dateObj.getFullYear(),
+                  getMonth: dateObj.getMonth() + 1,
+                  getDate: dateObj.getDate(),
+                });
+                
                 const nav = parseFloat(item.y) || 0;
                 const accNav = parseFloat(item.acc) || nav;
                 const dailyGrowth = item.equityReturn ? parseFloat(item.equityReturn) : undefined;
@@ -427,7 +656,7 @@ const parseFundBasicInfoFromHTML = (html: string): {
  * 注意：此接口不稳定，已移除使用，仅保留代码作为参考
  * @deprecated 已改用 pingzhongdata 接口
  */
-// @ts-ignore - 保留代码作为参考，但不再使用
+// @ts-expect-error - 保留代码作为参考，但不再使用
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const fetchFundBasicInfoFromJBGK = async (
   fundCode: string
@@ -713,6 +942,66 @@ const fetchStocksRealtime = async (
 /**
  * 从 pingzhongdata 获取基金基本信息（备用方案）
  */
+// 基金概况数据结构定义
+export interface FundManagerInfo {
+  id: string;
+  pic: string;
+  name: string;
+  star: number;
+  workTime: string;
+  fundSize: string;
+  power: {
+    avr: string;
+    categories: string[];
+    dsc: string[];
+    data: number[];
+    jzrq: string;
+  };
+  profit: {
+    categories: string[];
+    series: Array<{
+      data: Array<{
+        name: string | null;
+        color: string;
+        y: number;
+      }>;
+    }>;
+    jzrq: string;
+  };
+}
+
+export interface PerformanceEvaluation {
+  avr: string;
+  categories: string[];
+  dsc: string[];
+  data: number[];
+}
+
+export interface HolderStructure {
+  series: Array<{
+    name: string;
+    data: number[];
+  }>;
+  categories: string[];
+}
+
+export interface AssetAllocation {
+  series: Array<{
+    name: string;
+    type: string | null;
+    data: number[];
+    yAxis: number;
+  }>;
+  categories: string[];
+}
+
+export interface FundOverviewData {
+  currentFundManager: FundManagerInfo[];
+  performanceEvaluation: PerformanceEvaluation | null;
+  holderStructure: HolderStructure | null;
+  assetAllocation: AssetAllocation | null;
+}
+
 const fetchFundBasicInfoFromPingzhong = async (
   code: string
 ): Promise<{
@@ -810,6 +1099,132 @@ const fetchFundBasicInfoFromPingzhong = async (
         // ignore
       }
       reject(new Error('网络错误'));
+    };
+    
+    script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`;
+    document.body.appendChild(script);
+  });
+};
+
+/**
+ * 从 pingzhongdata 接口获取基金概况数据
+ * 包括：现任基金经理、业绩评价、持有人结构、资产配置
+ */
+export const fetchFundOverviewData = async (code: string): Promise<FundOverviewData> => {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.type = 'text/javascript';
+    script.async = true;
+    
+    const timeout = setTimeout(() => {
+      try {
+        document.body.removeChild(script);
+      } catch (e) {
+        // ignore
+      }
+      reject(new Error('获取基金概况数据超时'));
+    }, 15000);
+    
+    // 保存原始变量值
+    const originalVars = {
+      Data_currentFundManager: (window as any).Data_currentFundManager,
+      Data_performanceEvaluation: (window as any).Data_performanceEvaluation,
+      Data_holderStructure: (window as any).Data_holderStructure,
+      Data_assetAllocation: (window as any).Data_assetAllocation,
+    };
+    
+    let dataLoaded = false;
+    let checkCount = 0;
+    const maxChecks = 150;
+    
+    const checkInterval = setInterval(() => {
+      checkCount++;
+      
+      // 检查数据是否已加载（至少有一个数据存在）
+      const hasData = 
+        (window as any).Data_currentFundManager ||
+        (window as any).Data_performanceEvaluation ||
+        (window as any).Data_holderStructure ||
+        (window as any).Data_assetAllocation;
+      
+      if (hasData && !dataLoaded) {
+        if (checkCount < 10) {
+          return; // 等待数据完全加载
+        }
+        
+        dataLoaded = true;
+        clearInterval(checkInterval);
+        clearTimeout(timeout);
+        
+        try {
+          document.body.removeChild(script);
+        } catch (e) {
+          // ignore
+        }
+        
+        // 提取数据
+        const currentFundManager = (window as any).Data_currentFundManager || [];
+        const performanceEvaluation = (window as any).Data_performanceEvaluation || null;
+        const holderStructure = (window as any).Data_holderStructure || null;
+        const assetAllocation = (window as any).Data_assetAllocation || null;
+        
+        // 恢复原始值
+        Object.keys(originalVars).forEach((key) => {
+          try {
+            if (originalVars[key as keyof typeof originalVars] !== undefined) {
+              (window as any)[key] = originalVars[key as keyof typeof originalVars];
+            } else {
+              const descriptor = Object.getOwnPropertyDescriptor(window, key);
+              if (descriptor && descriptor.configurable) {
+                delete (window as any)[key];
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+        });
+        
+        resolve({
+          currentFundManager: Array.isArray(currentFundManager) ? currentFundManager : [],
+          performanceEvaluation,
+          holderStructure,
+          assetAllocation,
+        });
+      }
+      
+      if (checkCount >= maxChecks) {
+        clearInterval(checkInterval);
+        clearTimeout(timeout);
+        try {
+          document.body.removeChild(script);
+        } catch (e) {
+          // ignore
+        }
+        // 即使超时也返回空数据，不阻塞UI
+        resolve({
+          currentFundManager: [],
+          performanceEvaluation: null,
+          holderStructure: null,
+          assetAllocation: null,
+        });
+      }
+    }, 100);
+    
+    script.onerror = () => {
+      clearInterval(checkInterval);
+      clearTimeout(timeout);
+      try {
+        document.body.removeChild(script);
+      } catch (e) {
+        // ignore
+      }
+      // 网络错误时返回空数据，不阻塞UI
+      resolve({
+        currentFundManager: [],
+        performanceEvaluation: null,
+        holderStructure: null,
+        assetAllocation: null,
+      });
     };
     
     script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`;

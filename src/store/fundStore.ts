@@ -201,11 +201,21 @@ export const useFundStore = create<FundStore>((set, get) => ({
 
     const updatedList = updates.map((result) => {
       if (result.status === 'fulfilled') {
-        return result.value;
+        const updated = result.value;
+        // 调试日志：输出更新后的数据
+        console.log(`[数据更新] 基金 ${updated.fundCode}:`, {
+          nav: updated.nav,
+          estimateNav: updated.estimateNav,
+          estimateGrowth: updated.estimateGrowth,
+          userShares: updated.userShares,
+          userCost: updated.userCost,
+        });
+        return updated;
       }
       return { ...watchlist[updates.indexOf(result)], isLoading: false, error: '请求失败' };
     });
 
+    console.log('[数据更新完成] 更新后的基金列表:', updatedList);
     set({ watchlist: updatedList });
   },
 

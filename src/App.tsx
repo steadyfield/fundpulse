@@ -5,6 +5,7 @@ import { useAppStore } from './store/appStore';
 import { Header } from './components/Header';
 import { HomePage } from './components/HomePage';
 import { PortfolioPage } from './components/PortfolioPage';
+import { FAQPage } from './components/FAQPage';
 import { ScrollToTop } from './components/ScrollToTop';
 
 function App() {
@@ -25,11 +26,24 @@ function App() {
     return () => clearInterval(interval);
   }, [updateRealtimeData, getRefreshIntervalMs]);
 
+  const renderContent = () => {
+    switch (currentView) {
+      case 'home':
+        return <HomePage />;
+      case 'portfolio':
+        return <PortfolioPage />;
+      case 'faq':
+        return <FAQPage />;
+      default:
+        return <HomePage />;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-void">
       <Header />
 
-      {currentView === 'home' ? <HomePage /> : <PortfolioPage />}
+      {renderContent()}
 
       {/* 底部免责声明 */}
       <footer className="mt-12 py-6 border-t border-border-subtle">

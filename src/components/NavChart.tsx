@@ -1,11 +1,32 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 import { useDetailStore } from '../store/detailStore';
+import { mergeFundData } from '../utils/fundDataManager';
 import clsx from 'clsx';
 
 export function NavChart() {
-  const { navHistory, timeRange, setTimeRange, isLoading } = useDetailStore();
+  const { navHistory, timeRange, setTimeRange, isLoading, fundDetail } = useDetailStore();
+  const [fundDisplayData, setFundDisplayData] = useState<Awaited<ReturnType<typeof mergeFundData>> | null>(null);
+  
+  // 获取当前基金的代码
+  const fundCode = fundDetail?.fundCode;
+  
+  // 使用 FundDataManager 获取显示数据（考虑盘中和盘后逻辑）
+  useEffect(() => {
+    if (fundCode) {
+      mergeFundData(fundCode)
+        .then(data => {
+          // 只有成功获取到数据时才更新，失败时保留旧数据
+          if (data) {
+            setFundDisplayData(data);
+          }
+        })
+        .catch(() => {
+          // 静默失败，保留旧数据
+        });
+    }
+  }, [fundCode]);
 
   const ranges: Array<{ key: typeof timeRange; label: string }> = [
     { key: '30d', label: '1月' },
@@ -20,9 +41,22 @@ export function NavChart() {
     if (!navHistory || !Array.isArray(navHistory)) {
       return [];
     }
-    return navHistory
+    const filtered = navHistory
       .filter((item) => item && item.date && typeof item.nav === 'number' && !isNaN(item.nav))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      .sort((a, b) => {
+        // 直接比较日期字符串，避免时区问题
+        return a.date.localeCompare(b.date);
+      });
+    
+    // 调试日志：输出最近几条数据的日期
+    if (filtered.length > 0) {
+      console.log('[净值历史数据] 最近5条:', filtered.slice(-5).map(item => ({
+        date: item.date,
+        nav: item.nav,
+      })));
+    }
+    
+    return filtered;
   }, [navHistory]);
 
   // 计算统计数据
@@ -117,7 +151,15 @@ export function NavChart() {
           formatter: (value: string) => {
             try {
               if (!value) return '';
-              const date = new Date(value);
+              // 修复时区问题：直接解析日期字符串，避免时区转换
+              const dateParts = value.split('-');
+              if (dateParts.length === 3) {
+                const month = parseInt(dateParts[1], 10);
+                const day = parseInt(dateParts[2], 10);
+                return `${month}/${day}`;
+              }
+              // 备用方案：使用 Date 对象
+              const date = new Date(value + 'T00:00:00'); // 明确指定为本地时间
               if (isNaN(date.getTime())) return value;
               const month = date.getMonth() + 1;
               const day = date.getDate();
@@ -188,9 +230,22 @@ export function NavChart() {
             if (!param || !param.axisValue) return '';
             const item = validHistory.find((h) => h.date === param.axisValue);
             if (!item) return '';
-            const date = new Date(item.date);
-            const dateStr = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
-            return `
+            
+            // 调试日志：输出原始日期字符串
+            console.log('[Tooltip日期] 原始日期字符串:', item.date, 'axisValue:', param.axisValue);
+            
+            // 修复时区问题：直接解析日期字符串，避免时区转换
+            // item.date 格式为 "YYYY-MM-DD"，直接解析避免时区问题
+            const dateParts = item.date.split('-');
+            if (dateParts.length === 3) {
+              const year = parseInt(dateParts[0], 10);
+              const month = parseInt(dateParts[1], 10);
+              const day = parseInt(dateParts[2], 10);
+              const dateStr = `${year}年${month}月${day}日`;
+              
+              // 调试日志：输出解析后的日期
+              console.log('[Tooltip日期] 解析后:', { year, month, day, dateStr });
+              return `
               <div style="line-height: 1.6;">
                 <div style="font-weight: 600; margin-bottom: 8px; font-size: 13px;">${dateStr}</div>
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
@@ -211,7 +266,34 @@ export function NavChart() {
                 ` : ''}
               </div>
             `;
+            } else {
+              // 备用方案：使用 Date 对象
+              const date = new Date(item.date + 'T00:00:00'); // 明确指定为本地时间
+              const dateStr = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+              return `
+              <div style="line-height: 1.6;">
+                <div style="font-weight: 600; margin-bottom: 8px; font-size: 13px;">${dateStr}</div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                  <span style="opacity: 0.7;">单位净值</span>
+                  <span style="font-weight: 600; font-family: 'SF Mono', monospace; color: #60A5FA;">${item.nav.toFixed(4)}</span>
+                </div>
+                ${item.accNav ? `
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                  <span style="opacity: 0.7;">累计净值</span>
+                  <span style="font-family: 'SF Mono', monospace;">${item.accNav.toFixed(4)}</span>
+                </div>
+                ` : ''}
+                ${item.dailyGrowth !== undefined && !isNaN(item.dailyGrowth) ? `
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="opacity: 0.7;">日涨跌</span>
+                  <span style="font-weight: 600; font-family: 'SF Mono', monospace; color: ${item.dailyGrowth >= 0 ? '#FF453A' : '#32D74B'};">${item.dailyGrowth >= 0 ? '+' : ''}${item.dailyGrowth.toFixed(2)}%</span>
+                </div>
+                ` : ''}
+              </div>
+            `;
+            }
           } catch (e) {
+            console.error('日期格式化错误:', e);
             return '';
           }
         },
@@ -299,18 +381,28 @@ export function NavChart() {
             <div className="text-[10px] sm:text-xs text-text-tertiary mb-1 sm:mb-1.5 font-medium">最新净值</div>
             <div className={clsx(
               'text-base sm:text-lg md:text-xl font-mono font-semibold',
-              stats.changePercent >= 0 ? 'text-up' : 'text-down'
+              (fundDisplayData?.changePercent ?? stats.changePercent) >= 0 ? 'text-up' : 'text-down'
             )}>
-              {stats.latest.toFixed(4)}
+              {(fundDisplayData?.netValue ?? stats.latest).toFixed(4)}
             </div>
+            {fundDisplayData && (
+              <div className="text-[9px] text-text-tertiary mt-1">
+                {fundDisplayData.statusLabel}
+              </div>
+            )}
           </div>
           <div className="glass-card p-3 sm:p-4 backdrop-blur-xl bg-white/5 border-white/10 transition-all duration-300 hover:scale-105">
-            <div className="text-[10px] sm:text-xs text-text-tertiary mb-1 sm:mb-1.5 font-medium">期间涨跌</div>
+            <div className="text-[10px] sm:text-xs text-text-tertiary mb-1 sm:mb-1.5 font-medium">
+              {fundDisplayData?.isRealtime ? '估算涨跌幅' : '涨跌幅'}
+            </div>
             <div className={clsx(
               'text-base sm:text-lg md:text-xl font-mono font-semibold',
-              stats.changePercent >= 0 ? 'text-up' : 'text-down'
+              (fundDisplayData?.changePercent ?? stats.changePercent) >= 0 ? 'text-up' : 'text-down'
             )}>
-              {stats.changePercent >= 0 ? '+' : ''}{stats.changePercent.toFixed(2)}%
+              {fundDisplayData?.changePercent !== undefined
+                ? `${fundDisplayData.changePercent >= 0 ? '+' : ''}${fundDisplayData.changePercent.toFixed(2)}%`
+                : `${stats.changePercent >= 0 ? '+' : ''}${stats.changePercent.toFixed(2)}%`
+              }
             </div>
           </div>
           <div className="glass-card p-3 sm:p-4 backdrop-blur-xl bg-white/5 border-white/10 transition-all duration-300 hover:scale-105">

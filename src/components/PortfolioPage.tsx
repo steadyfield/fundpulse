@@ -3,6 +3,8 @@ import clsx from 'clsx';
 import { useFundStore } from '../store/fundStore';
 import { FundModal } from './FundModal';
 import { validateFundCode, fetchFundRealtime } from '../api/eastmoney';
+import { mergeFundData, calculateTodayProfit, calculateTotalProfit } from '../utils/fundDataManager';
+import { FlipNumber } from './FlipNumber';
 
 export function PortfolioPage() {
   const { watchlist, selectedFundCode, selectFund, removeFund, updateUserHolding, updateRealtimeData, addFund } = useFundStore();
@@ -25,10 +27,82 @@ export function PortfolioPage() {
   const [editingHoldingFundCode, setEditingHoldingFundCode] = useState<string | null>(null); // 正在编辑持仓的基金代码
   const [isEditingHolding, setIsEditingHolding] = useState(false); // 是否为编辑模式（false=添加，true=修改）
 
-  // 计算总资产（估算）
+  // 存储每个基金的最新净值数据（使用 FundDataManager）
+  // mergeFundData 可能返回 null（获取失败），所以类型是 FundDisplayData | null
+  const [fundDisplayData, setFundDisplayData] = useState<Map<string, NonNullable<Awaited<ReturnType<typeof mergeFundData>>>>>(new Map());
+
+  // 加载所有基金的最新净值数据（使用 FundDataManager，考虑盘中/盘后逻辑）
+  const loadFundDisplayData = async () => {
+    if (watchlist.length === 0) {
+      // 不清空现有数据，保持显示
+      return;
+    }
+    
+    // 获取当前状态（使用函数式更新确保获取最新值）
+    setFundDisplayData(prevMap => {
+      // 创建新 map，保留所有旧数据
+      const newMap = new Map(prevMap);
+      
+      // 并行加载所有基金数据
+      (async () => {
+        const updates = await Promise.allSettled(
+          watchlist.map(async (fund) => {
+            try {
+              const displayData = await mergeFundData(fund.fundCode);
+              // 只有成功获取到数据时才返回，null 表示获取失败，保留旧数据
+              if (displayData) {
+                return { code: fund.fundCode, data: displayData };
+              }
+              return null;
+            } catch (error) {
+              console.warn(`获取基金 ${fund.fundCode} 显示数据失败:`, error);
+              // 如果加载失败，返回 null，保留旧数据
+              return null;
+            }
+          })
+        );
+        
+        // 处理加载结果：只有成功获取到数据时才更新
+        updates.forEach(result => {
+          if (result.status === 'fulfilled' && result.value && result.value.data) {
+            // 只有数据不为 null 时才更新
+            newMap.set(result.value.code, result.value.data);
+          }
+          // 如果失败或返回 null，newMap 中已经保留了旧数据，不需要处理
+        });
+        
+        // 所有数据加载完成后，一次性更新状态（保留未更新的旧数据）
+        setFundDisplayData(new Map(newMap));
+      })();
+      
+      // 先返回旧数据，避免清空
+      return prevMap;
+    });
+  };
+
+  // 初始加载和 watchlist 变化时重新加载
+  useEffect(() => {
+    loadFundDisplayData();
+  }, [watchlist]);
+
+  // 页面加载时立即刷新一次数据
+  useEffect(() => {
+    if (watchlist.length > 0) {
+      updateRealtimeData();
+      // 刷新实时数据后，重新加载显示数据
+      setTimeout(() => {
+        loadFundDisplayData();
+      }, 1000);
+    }
+  }, []); // 只在组件挂载时执行一次
+
+  // 计算总资产（估算）：使用 FundDataManager 的净值数据
+  // 如果 displayData 未加载，使用 fund 中的后备数据，避免清零
   const totalAssets = watchlist.reduce((sum, fund) => {
     const userShares = fund.userShares || 0;
-    const currentNav = fund.estimateNav || fund.nav || 0;
+    const displayData = fundDisplayData.get(fund.fundCode);
+    // 优先使用 displayData，如果没有则使用 fund 中的后备数据
+    const currentNav = displayData?.netValue || fund.estimateNav || fund.nav || 0;
     return sum + currentNav * userShares;
   }, 0);
 
@@ -39,21 +113,83 @@ export function PortfolioPage() {
     return sum + userCost * userShares;
   }, 0);
 
-  // 计算今日盈亏
+  // 计算今日盈亏：使用 FundDataManager 的计算函数
+  // 如果 displayData 未加载，使用 fund 中的后备数据计算，避免清零
   const todayChange = watchlist.reduce((sum, fund) => {
     const userShares = fund.userShares || 0;
-    const currentNav = fund.estimateNav || fund.nav || 0;
-    if (!currentNav || !userShares || fund.estimateGrowth === undefined) return sum;
-    const change = (fund.estimateGrowth / 100) * currentNav * userShares;
-    return sum + change;
+    const displayData = fundDisplayData.get(fund.fundCode);
+    
+    if (displayData) {
+      // 使用 FundDataManager 的数据
+      return sum + calculateTodayProfit(displayData.netValue, displayData.previousNav, userShares);
+    } else if (fund.estimateNav && fund.nav && userShares) {
+      // 使用 fund 中的后备数据
+      return sum + calculateTodayProfit(fund.estimateNav, fund.nav, userShares);
+    }
+    
+    return sum;
   }, 0);
 
-  const todayChangePercent = totalAssets > 0 ? (todayChange / totalAssets) * 100 : 0;
+  // 计算今日盈亏百分比：加权平均
+  // 如果 displayData 未加载，使用 fund 中的后备数据计算，避免清零
+  const todayChangePercent = watchlist.reduce((sum, fund) => {
+    const userShares = fund.userShares || 0;
+    const displayData = fundDisplayData.get(fund.fundCode);
+    
+    if (!userShares) return sum;
+    
+    let fundPercent = 0;
+    let fundValue = 0;
+    
+    if (displayData) {
+      // 使用 FundDataManager 的数据
+      fundPercent = displayData.changePercent;
+      fundValue = displayData.netValue * userShares;
+    } else if (fund.estimateNav && fund.nav) {
+      // 使用 fund 中的后备数据
+      fundPercent = ((fund.estimateNav - fund.nav) / fund.nav) * 100;
+      fundValue = (fund.estimateNav || fund.nav) * userShares;
+    } else {
+      return sum;
+    }
+    
+    return sum + (fundPercent * fundValue);
+  }, 0) / (totalAssets > 0 ? totalAssets : 1);
 
-  // 自动定时更新实时数据（每30秒）
+  // 计算累计收益总和：使用 FundDataManager 的计算函数
+  // 如果 displayData 未加载，使用 fund 中的后备数据计算，避免清零
+  const totalProfit = watchlist.reduce((sum, fund) => {
+    const userShares = fund.userShares || 0;
+    const userCost = fund.userCost || 0;
+    const displayData = fundDisplayData.get(fund.fundCode);
+    
+    if (!userShares || !userCost) return sum;
+    
+    if (displayData) {
+      // 使用 FundDataManager 的数据
+      return sum + calculateTotalProfit(displayData.netValue, userCost, userShares);
+    } else {
+      // 使用 fund 中的后备数据
+      const currentNav = fund.estimateNav || fund.nav || 0;
+      if (currentNav > 0) {
+        return sum + calculateTotalProfit(currentNav, userCost, userShares);
+      }
+    }
+    
+    return sum;
+  }, 0);
+
+  // 计算累计收益百分比：相对于总成本
+  const totalProfitPercent = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
+
+  // 自动定时更新实时数据和显示数据（每30秒）
   useEffect(() => {
     const interval = setInterval(() => {
       updateRealtimeData();
+      // 更新实时数据后，重新加载显示数据（考虑盘中/盘后逻辑）
+      setTimeout(() => {
+        loadFundDisplayData();
+      }, 1000);
     }, 30000); // 30秒更新一次
 
     return () => clearInterval(interval);
@@ -299,21 +435,21 @@ export function PortfolioPage() {
   return (
     <div className="min-h-screen bg-void bg-scanline pt-20">
       {/* 资产概览卡片区 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 p-3 sm:p-4 md:p-6 max-w-[1920px] mx-auto">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 p-3 sm:p-4 md:p-6 max-w-[1920px] mx-auto">
         {/* 总资产 */}
-        <div className="glass-card p-3 sm:p-4 md:p-5 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-24 sm:w-32 h-24 sm:h-32 bg-neon-blue/10 rounded-full blur-3xl -mr-6 sm:-mr-10 -mt-6 sm:-mt-10" />
+        <div className="glass-card p-2.5 sm:p-3 md:p-4 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-20 sm:w-24 h-20 sm:h-24 bg-neon-blue/10 rounded-full blur-3xl -mr-4 sm:-mr-6 -mt-4 sm:-mt-6" />
           <div className="relative">
-            <div className="text-text-secondary text-xs sm:text-sm mb-1 flex items-center gap-1.5 sm:gap-2">
-              <i className="ri-wallet-3-line text-sm sm:text-base" /> <span className="truncate">总资产 (估算)</span>
+            <div className="text-text-secondary text-xs mb-0.5 sm:mb-1 flex items-center gap-1">
+              <i className="ri-wallet-3-line text-xs sm:text-sm" /> <span className="truncate">总资产 (估算)</span>
             </div>
-            <div className="text-xl sm:text-2xl md:text-3xl font-mono font-bold text-text-primary tracking-tight">
-              ¥{totalAssets.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}
+            <div className="text-lg sm:text-xl md:text-2xl font-mono font-bold text-text-primary tracking-tight">
+              <FlipNumber value={totalAssets} decimals={2} prefix="¥" />
             </div>
-            <div className="mt-1 sm:mt-2 text-[10px] sm:text-xs text-text-tertiary">
+            <div className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-text-tertiary">
               <span>持仓 {watchlist.length} 只基金</span>
               {totalCost > 0 && (
-                <span className="ml-1 sm:ml-2">
+                <span className="ml-1">
                   · 成本 ¥{totalCost.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}
                 </span>
               )}
@@ -321,56 +457,103 @@ export function PortfolioPage() {
           </div>
         </div>
 
-        {/* 今日盈亏 */}
-        <div className="glass-card p-3 sm:p-4 md:p-5 relative overflow-hidden">
-          <div
-            className={clsx(
-              'absolute top-0 right-0 w-24 sm:w-32 h-24 sm:h-32 rounded-full blur-3xl -mr-6 sm:-mr-10 -mt-6 sm:-mt-10',
-              todayChange >= 0 ? 'bg-up/10' : 'bg-down/10'
-            )}
-          />
-          <div className="relative">
-            <div className="text-text-secondary text-xs sm:text-sm mb-1 flex items-center gap-1.5 sm:gap-2">
-              <i className="ri-line-chart-fill text-sm sm:text-base" /> <span className="truncate">今日盈亏</span>
+        {/* 今日盈亏和累计收益 */}
+        <div className="glass-card p-2.5 sm:p-3 md:p-4 relative overflow-hidden">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3">
+            {/* 今日盈亏 */}
+            <div className="relative">
+              <div
+                className={clsx(
+                  'absolute top-0 right-0 w-16 sm:w-20 h-16 sm:h-20 rounded-full blur-3xl -mr-3 sm:-mr-4 -mt-3 sm:-mt-4',
+                  todayChange >= 0 ? 'bg-up/10' : 'bg-down/10'
+                )}
+              />
+              <div className="relative">
+                <div className="text-text-secondary text-xs mb-0.5 sm:mb-1 flex items-center gap-1">
+                  <i className="ri-line-chart-fill text-xs sm:text-sm" /> <span className="truncate">今日盈亏</span>
+                </div>
+                <div
+                  className={clsx(
+                    'text-base sm:text-lg md:text-xl font-mono font-bold tracking-tight',
+                    todayChange >= 0 ? 'text-up' : 'text-down'
+                  )}
+                >
+                  {todayChange >= 0 ? '+' : ''}¥<FlipNumber value={todayChange} decimals={2} />
+                </div>
+                <div
+                  className={clsx(
+                    'mt-0.5 sm:mt-1 text-[10px] sm:text-xs',
+                    todayChangePercent >= 0 ? 'text-up' : 'text-down'
+                  )}
+                >
+                  <FlipNumber 
+                    value={todayChangePercent} 
+                    decimals={2} 
+                    prefix={todayChangePercent >= 0 ? '+' : ''}
+                    suffix="%"
+                  />
+                  {' '}{todayChange >= 0 ? '↑' : '↓'}
+                </div>
+              </div>
             </div>
-            <div
-              className={clsx(
-                'text-xl sm:text-2xl md:text-3xl font-mono font-bold tracking-tight',
-                todayChange >= 0 ? 'text-up' : 'text-down'
-              )}
-            >
-              {todayChange >= 0 ? '+' : ''}¥{todayChange.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}
-            </div>
-            <div
-              className={clsx(
-                'mt-1 sm:mt-2 text-[10px] sm:text-xs',
-                todayChange >= 0 ? 'text-up' : 'text-down'
-              )}
-            >
-              {todayChangePercent >= 0 ? '+' : ''}
-              {todayChangePercent.toFixed(2)}% {todayChange >= 0 ? '↑' : '↓'}
+
+            {/* 累计收益 */}
+            <div className="relative border-l border-white/10 pl-2 sm:pl-3">
+              <div
+                className={clsx(
+                  'absolute top-0 right-0 w-16 sm:w-20 h-16 sm:h-20 rounded-full blur-3xl -mr-3 sm:-mr-4 -mt-3 sm:-mt-4',
+                  totalProfit >= 0 ? 'bg-up/10' : 'bg-down/10'
+                )}
+              />
+              <div className="relative">
+                <div className="text-text-secondary text-xs mb-0.5 sm:mb-1 flex items-center gap-1">
+                  <i className="ri-stock-line text-xs sm:text-sm" /> <span className="truncate">累计收益</span>
+                </div>
+                <div
+                  className={clsx(
+                    'text-base sm:text-lg md:text-xl font-mono font-bold tracking-tight',
+                    totalProfit >= 0 ? 'text-up' : 'text-down'
+                  )}
+                >
+                  {totalProfit >= 0 ? '+' : ''}¥<FlipNumber value={totalProfit} decimals={2} />
+                </div>
+                <div
+                  className={clsx(
+                    'mt-0.5 sm:mt-1 text-[10px] sm:text-xs',
+                    totalProfitPercent >= 0 ? 'text-up' : 'text-down'
+                  )}
+                >
+                  <FlipNumber 
+                    value={totalProfitPercent} 
+                    decimals={2} 
+                    prefix={totalProfitPercent >= 0 ? '+' : ''}
+                    suffix="%"
+                  />
+                  {' '}{totalProfit >= 0 ? '↑' : '↓'}
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
         {/* AI 健康分 */}
         <div
-          className="glass-card p-3 sm:p-4 md:p-5 relative overflow-hidden cursor-pointer hover:border-neon-purple/50 transition-all group sm:col-span-2 md:col-span-1"
+          className="glass-card p-2.5 sm:p-3 md:p-4 relative overflow-hidden cursor-pointer hover:border-neon-purple/50 transition-all group"
           onClick={() => {
             // TODO: 打开AI选择器
             console.log('打开AI诊断');
           }}
         >
-          <div className="absolute top-0 right-0 w-24 sm:w-32 h-24 sm:h-32 bg-neon-purple/10 rounded-full blur-3xl -mr-6 sm:-mr-10 -mt-6 sm:-mt-10 group-hover:bg-neon-purple/20 transition-colors" />
+          <div className="absolute top-0 right-0 w-20 sm:w-24 h-20 sm:h-24 bg-neon-purple/10 rounded-full blur-3xl -mr-4 sm:-mr-6 -mt-4 sm:-mt-6 group-hover:bg-neon-purple/20 transition-colors" />
           <div className="relative">
-            <div className="text-text-secondary text-xs sm:text-sm mb-1 flex items-center gap-1.5 sm:gap-2">
-              <i className="ri-robot-2-line text-neon-purple text-sm sm:text-base" /> <span className="truncate">🤖 AI 健康分</span>
+            <div className="text-text-secondary text-xs mb-0.5 sm:mb-1 flex items-center gap-1">
+              <i className="ri-robot-2-line text-neon-purple text-xs sm:text-sm" /> <span className="truncate">🤖 AI 健康分</span>
             </div>
-            <div className="flex items-end gap-1.5 sm:gap-2">
-              <span className="text-xl sm:text-2xl md:text-3xl font-mono font-bold text-neon-purple">--</span>
-              <span className="text-xs sm:text-sm text-text-tertiary mb-0.5 sm:mb-1">/100</span>
+            <div className="flex items-end gap-1 sm:gap-1.5">
+              <span className="text-lg sm:text-xl md:text-2xl font-mono font-bold text-neon-purple">--</span>
+              <span className="text-xs text-text-tertiary mb-0.5">/100</span>
             </div>
-            <div className="mt-1 sm:mt-2 text-[10px] sm:text-xs text-text-tertiary flex items-center gap-1">
+            <div className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-text-tertiary flex items-center gap-1">
               <span className="truncate">点击开始诊断</span>
               <i className="ri-arrow-right-line text-xs" />
             </div>
@@ -406,15 +589,25 @@ export function PortfolioPage() {
             watchlist.map((fund, index) => {
               const userShares = fund.userShares || 0;
               const userCost = fund.userCost || 0;
-              const currentNav = fund.estimateNav || fund.nav || 0;
+              const displayData = fundDisplayData.get(fund.fundCode);
+              
+              // 使用 FundDataManager 的数据（如果还没有加载完成，使用 fund 中的后备数据）
+              const currentNav = displayData?.netValue || fund.estimateNav || fund.nav || 0;
               const currentValue = currentNav * userShares;
               const costValue = userCost * userShares;
-              const profit = currentValue - costValue;
-              const profitPercent = userCost > 0 ? ((currentNav - userCost) / userCost) * 100 : 0;
               
-              const todayProfit = fund.estimateGrowth !== undefined && currentNav && userShares
-                ? (fund.estimateGrowth / 100) * currentNav * userShares
+              // 使用 FundDataManager 的计算函数
+              const todayProfit = displayData 
+                ? calculateTodayProfit(displayData.netValue, displayData.previousNav, userShares)
                 : 0;
+              // 累计收益：必须使用 FundDataManager 的净值（盘中/盘后逻辑）
+              // 如果 displayData 还没有加载，暂时使用 fund 中的净值，但会在加载完成后更新
+              const profit = displayData && userCost
+                ? calculateTotalProfit(displayData.netValue, userCost, userShares)
+                : userCost && userShares && currentNav
+                  ? calculateTotalProfit(currentNav, userCost, userShares)
+                  : currentValue - costValue;
+              const profitPercent = userCost > 0 && currentNav > 0 ? ((currentNav - userCost) / userCost) * 100 : 0;
 
               return (
                 <div
@@ -449,6 +642,34 @@ export function PortfolioPage() {
                     </button>
                   </div>
 
+                  {/* 最新净值/涨跌幅 */}
+                  {displayData && (
+                    <div className="mb-3 pb-3 border-b border-white/10">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[10px] sm:text-xs text-white/60">最新净值</div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-sm sm:text-base font-mono font-semibold text-white tabular-nums">
+                            <FlipNumber value={displayData.netValue} decimals={4} />
+                          </span>
+                          <span className={clsx(
+                            'text-xs sm:text-sm font-mono tabular-nums',
+                            displayData.changePercent >= 0 ? 'text-red-400' : 'text-green-400'
+                          )}>
+                            <FlipNumber 
+                              value={displayData.changePercent} 
+                              decimals={2} 
+                              prefix={displayData.changePercent >= 0 ? '+' : ''}
+                              suffix="%"
+                            />
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-[10px] text-white/40 mt-1">
+                        {displayData.statusLabel}
+                      </div>
+                    </div>
+                  )}
+
                   {/* 数据网格：持有金额、今日盈亏、累计收益 */}
                   <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-3 sm:mb-4">
                     {/* 持有金额 */}
@@ -461,7 +682,7 @@ export function PortfolioPage() {
                           handleOpenEditHolding(fund.fundCode);
                         }}
                       >
-                        ¥{currentValue.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}
+                        ¥<FlipNumber value={currentValue} decimals={2} />
                       </div>
                       <div 
                         className="text-[10px] sm:text-[11px] text-white/60 font-mono tabular-nums cursor-pointer hover:text-white/80 transition-colors mt-0.5"
@@ -481,14 +702,22 @@ export function PortfolioPage() {
                         'text-sm sm:text-[15px] font-medium font-mono tabular-nums',
                         todayProfit >= 0 ? 'text-red-400' : 'text-green-400'
                       )}>
-                        {todayProfit >= 0 ? '+' : ''}¥{todayProfit.toFixed(2)}
+                        {todayProfit >= 0 ? '+' : ''}¥<FlipNumber value={todayProfit} decimals={2} />
                       </div>
                       <div className={clsx(
                         'text-[10px] sm:text-[11px] font-mono tabular-nums',
-                        (fund.estimateGrowth || 0) >= 0 ? 'text-red-400' : 'text-green-400'
+                        todayProfit >= 0 ? 'text-red-400' : 'text-green-400'
                       )}>
-                        {(fund.estimateGrowth || 0) >= 0 ? '+' : ''}
-                        {fund.estimateGrowth?.toFixed(2) || '0.00'}%
+                        {displayData ? (
+                          <FlipNumber 
+                            value={displayData.changePercent} 
+                            decimals={2} 
+                            prefix={displayData.changePercent >= 0 ? '+' : ''}
+                            suffix="%"
+                          />
+                        ) : (
+                          '--'
+                        )}
                       </div>
                     </div>
 
@@ -499,14 +728,18 @@ export function PortfolioPage() {
                         'text-sm sm:text-[15px] font-medium font-mono tabular-nums',
                         profit >= 0 ? 'text-red-400' : 'text-green-400'
                       )}>
-                        {profit >= 0 ? '+' : ''}¥{profit.toFixed(2)}
+                        {profit >= 0 ? '+' : ''}¥<FlipNumber value={profit} decimals={2} />
                       </div>
                       <div className={clsx(
                         'text-[10px] sm:text-[11px] font-mono tabular-nums',
                         profitPercent >= 0 ? 'text-red-400' : 'text-green-400'
                       )}>
-                        {profitPercent >= 0 ? '+' : ''}
-                        {profitPercent.toFixed(2)}%
+                        <FlipNumber 
+                          value={profitPercent} 
+                          decimals={2} 
+                          prefix={profitPercent >= 0 ? '+' : ''}
+                          suffix="%"
+                        />
                       </div>
                     </div>
                   </div>
@@ -552,6 +785,7 @@ export function PortfolioPage() {
             <thead className="bg-white/5 text-xs text-text-tertiary uppercase tracking-wider sticky top-0 z-10">
               <tr>
                 <th className="py-3 pl-6">基金名称</th>
+                <th className="py-3">最新净值</th>
                 <th className="py-3">持有金额</th>
                 <th className="py-3">今日盈亏</th>
                 <th className="py-3">累计收益</th>
@@ -562,7 +796,7 @@ export function PortfolioPage() {
             <tbody className="divide-y divide-white/5">
               {watchlist.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-text-tertiary">
+                  <td colSpan={7} className="py-12 text-center text-text-tertiary">
                     暂无自选基金，请前往首页添加
                   </td>
                 </tr>
@@ -570,16 +804,25 @@ export function PortfolioPage() {
                 watchlist.map((fund) => {
                   const userShares = fund.userShares || 0;
                   const userCost = fund.userCost || 0;
-                  const currentNav = fund.estimateNav || fund.nav || 0;
+                  const displayData = fundDisplayData.get(fund.fundCode);
+                  
+                  // 使用 FundDataManager 的数据（如果还没有加载完成，使用 fund 中的后备数据）
+                  const currentNav = displayData?.netValue || fund.estimateNav || fund.nav || 0;
                   const currentValue = currentNav * userShares;
                   const costValue = userCost * userShares;
-                  const profit = currentValue - costValue;
-                  const profitPercent = userCost > 0 ? ((currentNav - userCost) / userCost) * 100 : 0;
                   
-                  // 今日盈亏：使用估算涨跌幅计算
-                  const todayProfit = fund.estimateGrowth !== undefined && currentNav && userShares
-                    ? (fund.estimateGrowth / 100) * currentNav * userShares
+                  // 使用 FundDataManager 的计算函数
+                  const todayProfit = displayData 
+                    ? calculateTodayProfit(displayData.netValue, displayData.previousNav, userShares)
                     : 0;
+                  // 累计收益：必须使用 FundDataManager 的净值（盘中/盘后逻辑）
+                  // 如果 displayData 还没有加载，暂时使用 fund 中的净值，但会在加载完成后更新
+                  const profit = displayData && userCost
+                    ? calculateTotalProfit(displayData.netValue, userCost, userShares)
+                    : userCost && userShares && currentNav
+                      ? calculateTotalProfit(currentNav, userCost, userShares)
+                      : currentValue - costValue;
+                  const profitPercent = userCost > 0 && currentNav > 0 ? ((currentNav - userCost) / userCost) * 100 : 0;
 
                   return (
                     <tr
@@ -600,13 +843,38 @@ export function PortfolioPage() {
                         </div>
                       </td>
                       <td className="py-4">
+                        {displayData ? (
+                          <>
+                            <div className="font-mono text-text-primary tabular-nums">
+                              <FlipNumber value={displayData.netValue} decimals={4} />
+                            </div>
+                            <div className={clsx(
+                              'text-xs mt-0.5 font-mono tabular-nums',
+                              displayData.changePercent >= 0 ? 'text-red-400' : 'text-green-400'
+                            )}>
+                              <FlipNumber 
+                                value={displayData.changePercent} 
+                                decimals={2} 
+                                prefix={displayData.changePercent >= 0 ? '+' : ''}
+                                suffix="%"
+                              />
+                            </div>
+                            <div className="text-[10px] text-text-tertiary mt-0.5">
+                              {displayData.statusLabel}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-text-tertiary">--</span>
+                        )}
+                      </td>
+                      <td className="py-4">
                         <div 
                           className="cursor-pointer hover:bg-white/[0.02] rounded px-2 py-1 -mx-2 transition-colors group/edit"
                           onClick={() => handleOpenEditHolding(fund.fundCode)}
                           title="点击修改持仓"
                         >
                           <div className="font-mono text-text-primary tabular-nums">
-                            ¥{currentValue.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}
+                            ¥<FlipNumber value={currentValue} decimals={2} />
                           </div>
                           <div className="text-xs text-text-tertiary flex items-center gap-1 mt-0.5">
                             {userShares > 0 ? (
@@ -627,17 +895,24 @@ export function PortfolioPage() {
                             todayProfit >= 0 ? 'text-red-400' : 'text-green-400'
                           )}
                         >
-                          {todayProfit >= 0 ? '+' : ''}
-                          ¥{todayProfit.toFixed(2)}
+                          {todayProfit >= 0 ? '+' : ''}¥<FlipNumber value={todayProfit} decimals={2} />
                         </div>
                         <div
                           className={clsx(
                             'text-xs mt-0.5',
-                            (fund.estimateGrowth || 0) >= 0 ? 'text-red-400' : 'text-green-400'
+                            todayProfit >= 0 ? 'text-red-400' : 'text-green-400'
                           )}
                         >
-                          {(fund.estimateGrowth || 0) >= 0 ? '+' : ''}
-                          {fund.estimateGrowth?.toFixed(2) || '0.00'}%
+                          {displayData ? (
+                            <FlipNumber 
+                              value={displayData.changePercent} 
+                              decimals={2} 
+                              prefix={displayData.changePercent >= 0 ? '+' : ''}
+                              suffix="%"
+                            />
+                          ) : (
+                            '--'
+                          )}
                         </div>
                       </td>
                       <td className="py-4">
@@ -647,7 +922,7 @@ export function PortfolioPage() {
                             profit >= 0 ? 'text-red-400' : 'text-green-400'
                           )}
                         >
-                          {profit >= 0 ? '+' : ''}¥{profit.toFixed(2)}
+                          {profit >= 0 ? '+' : ''}¥<FlipNumber value={profit} decimals={2} />
                         </div>
                         <div
                           className={clsx(
@@ -655,8 +930,12 @@ export function PortfolioPage() {
                             profitPercent >= 0 ? 'text-red-400' : 'text-green-400'
                           )}
                         >
-                          {profitPercent >= 0 ? '+' : ''}
-                          {profitPercent.toFixed(2)}%
+                          <FlipNumber 
+                            value={profitPercent} 
+                            decimals={2} 
+                            prefix={profitPercent >= 0 ? '+' : ''}
+                            suffix="%"
+                          />
                         </div>
                       </td>
                       <td className="py-4 text-center">

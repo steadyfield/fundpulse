@@ -12,8 +12,15 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // 明确指定 Service Worker 文件名和路径
+      filename: 'sw.js',
+      strategies: 'generateSW',
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // 清理旧的 Service Worker
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fundgz\.1234567\.com\.cn/,
@@ -42,8 +49,8 @@ export default defineConfig({
         display: 'standalone',
         start_url: '/fundpulse/',
         icons: [
-          { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'favicon.png', sizes: '192x192', type: 'image/png' },
+          { src: 'favicon-512.png', sizes: '512x512', type: 'image/png' },
         ],
       },
     }),

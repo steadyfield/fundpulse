@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type ViewMode = 'home' | 'portfolio';
+export type ViewMode = 'home' | 'portfolio' | 'faq';
 
 interface AppStore {
   currentView: ViewMode;
