@@ -48,14 +48,6 @@ export function NavChart() {
         return a.date.localeCompare(b.date);
       });
     
-    // 调试日志：输出最近几条数据的日期
-    if (filtered.length > 0) {
-      console.log('[净值历史数据] 最近5条:', filtered.slice(-5).map(item => ({
-        date: item.date,
-        nav: item.nav,
-      })));
-    }
-    
     return filtered;
   }, [navHistory]);
 
@@ -231,9 +223,6 @@ export function NavChart() {
             const item = validHistory.find((h) => h.date === param.axisValue);
             if (!item) return '';
             
-            // 调试日志：输出原始日期字符串
-            console.log('[Tooltip日期] 原始日期字符串:', item.date, 'axisValue:', param.axisValue);
-            
             // 修复时区问题：直接解析日期字符串，避免时区转换
             // item.date 格式为 "YYYY-MM-DD"，直接解析避免时区问题
             const dateParts = item.date.split('-');
@@ -243,8 +232,6 @@ export function NavChart() {
               const day = parseInt(dateParts[2], 10);
               const dateStr = `${year}年${month}月${day}日`;
               
-              // 调试日志：输出解析后的日期
-              console.log('[Tooltip日期] 解析后:', { year, month, day, dateStr });
               return `
               <div style="line-height: 1.6;">
                 <div style="font-weight: 600; margin-bottom: 8px; font-size: 13px;">${dateStr}</div>

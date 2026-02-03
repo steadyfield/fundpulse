@@ -3,7 +3,7 @@ import clsx from 'clsx';
 import { useFundStore } from '../store/fundStore';
 import { useAppStore } from '../store/appStore';
 import { FundModal } from './FundModal';
-import { validateFundCode, fetchFundRealtime } from '../api/eastmoney';
+import { validateFundCode, fetchFundRealtime, searchFunds, FundSearchResult } from '../api/eastmoney';
 import { mergeFundData, calculateTodayProfit, calculateTotalProfit } from '../utils/fundDataManager';
 import { FlipNumber } from './FlipNumber';
 
@@ -18,6 +18,8 @@ export function PortfolioPage() {
   const [showHoldingModal, setShowHoldingModal] = useState(false);
   const [inputCode, setInputCode] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  const [searchResults, setSearchResults] = useState<FundSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [addMessage, setAddMessage] = useState('');
   const [pendingFundCode, setPendingFundCode] = useState<string>('');
@@ -193,33 +195,47 @@ export function PortfolioPage() {
     setShowFundModal(true);
   };
 
-  // 处理添加基金 - 先验证并显示基金信息预览
-  const handleAdd = async (code?: string) => {
-    const codeToAdd = code || inputCode;
-    if (!/^\d{6}$/.test(codeToAdd)) {
-      setAddMessage('请输入6位基金代码');
+  // 处理搜索基金
+  const handleSearch = async () => {
+    const keyword = inputCode.trim();
+    if (!keyword) {
+      setSearchResults([]);
       return;
     }
 
-    setIsValidating(true);
+    setIsSearching(true);
     setAddMessage('');
     
     try {
-      // 验证基金代码并获取基本信息
-      const validation = await validateFundCode(codeToAdd);
-      if (!validation.valid) {
-        setAddMessage('基金代码不存在或无法访问');
-        setIsValidating(false);
-        return;
+      const results = await searchFunds(keyword);
+      setSearchResults(results);
+      if (results.length === 0) {
+        setAddMessage('未找到匹配的基金');
       }
+    } catch (error) {
+      setAddMessage(error instanceof Error ? error.message : '搜索失败，请重试');
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
+  // 处理选择搜索结果
+  const handleSelectSearchResult = async (result: FundSearchResult) => {
+    const codeToAdd = result.code;
+    setIsValidating(true);
+    setAddMessage('');
+    setSearchResults([]);
+    setInputCode(codeToAdd);
+    
+    try {
       // 获取基金实时数据（包含净值信息）
       try {
         const realtimeData = await fetchFundRealtime(codeToAdd);
         setPendingFundCode(codeToAdd);
         setPendingFundInfo({
           code: codeToAdd,
-          name: validation.name || codeToAdd,
+          name: result.name,
           nav: realtimeData.nav || 0,
           estimateNav: realtimeData.estimateNav,
         });
@@ -230,8 +246,8 @@ export function PortfolioPage() {
         setPendingFundCode(codeToAdd);
         setPendingFundInfo({
           code: codeToAdd,
-          name: validation.name || codeToAdd,
-          nav: 0,
+          name: result.name,
+          nav: result.nav || 0,
         });
         setShowFundPreview(true);
         setShowAddModal(false);
@@ -240,6 +256,62 @@ export function PortfolioPage() {
       setAddMessage(error instanceof Error ? error.message : '验证失败，请重试');
     } finally {
       setIsValidating(false);
+    }
+  };
+
+  // 处理添加基金 - 先验证并显示基金信息预览（保留旧逻辑作为备用）
+  const handleAdd = async (code?: string) => {
+    const codeToAdd = code || inputCode;
+    if (!codeToAdd.trim()) {
+      setAddMessage('请输入基金代码或名称');
+      return;
+    }
+
+    // 如果是6位数字，直接使用旧逻辑
+    if (/^\d{6}$/.test(codeToAdd)) {
+      setIsValidating(true);
+      setAddMessage('');
+      
+      try {
+        // 验证基金代码并获取基本信息
+        const validation = await validateFundCode(codeToAdd);
+        if (!validation.valid) {
+          setAddMessage('基金代码不存在或无法访问');
+          setIsValidating(false);
+          return;
+        }
+
+        // 获取基金实时数据（包含净值信息）
+        try {
+          const realtimeData = await fetchFundRealtime(codeToAdd);
+          setPendingFundCode(codeToAdd);
+          setPendingFundInfo({
+            code: codeToAdd,
+            name: validation.name || codeToAdd,
+            nav: realtimeData.nav || 0,
+            estimateNav: realtimeData.estimateNav,
+          });
+          setShowFundPreview(true);
+          setShowAddModal(false);
+        } catch {
+          // 如果获取实时数据失败，仍然显示预览（只有名称）
+          setPendingFundCode(codeToAdd);
+          setPendingFundInfo({
+            code: codeToAdd,
+            name: validation.name || codeToAdd,
+            nav: 0,
+          });
+          setShowFundPreview(true);
+          setShowAddModal(false);
+        }
+      } catch (error) {
+        setAddMessage(error instanceof Error ? error.message : '验证失败，请重试');
+      } finally {
+        setIsValidating(false);
+      }
+    } else {
+      // 否则触发搜索
+      await handleSearch();
     }
   };
 
@@ -1004,14 +1076,46 @@ export function PortfolioPage() {
                   onChange={(e) => {
                     setInputCode(e.target.value);
                     setAddMessage('');
+                    setSearchResults([]);
                   }}
                   onKeyDown={handleAddKeyDown}
-                  placeholder="请输入6位基金代码"
+                  placeholder="输入基金代码或名称搜索..."
                   className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-text-primary placeholder-text-tertiary focus:outline-none focus:border-neon-blue focus:ring-1 focus:ring-neon-blue"
                   autoFocus
-                  disabled={isValidating}
+                  disabled={isValidating || isSearching}
                 />
               </div>
+
+              {/* 搜索结果列表 */}
+              {searchResults.length > 0 && (
+                <div className="max-h-48 overflow-y-auto border border-white/10 rounded-lg bg-black/30">
+                  {searchResults.map((result) => (
+                    <div
+                      key={result.code}
+                      onClick={() => handleSelectSearchResult(result)}
+                      className="p-3 cursor-pointer hover:bg-white/5 transition-all border-b border-white/5 last:border-b-0"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-text-primary truncate">{result.name}</div>
+                          <div className="text-xs text-text-tertiary mt-1 flex items-center gap-2">
+                            <span>代码: {result.code}</span>
+                            {result.fundType && <span className="text-text-quaternary">·</span>}
+                            {result.fundType && <span>{result.fundType}</span>}
+                          </div>
+                        </div>
+                        <i className="ri-arrow-right-line text-neon-blue text-lg ml-2 flex-shrink-0" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {isSearching && (
+                <div className="text-sm text-text-tertiary text-center py-2">
+                  搜索中...
+                </div>
+              )}
 
               {addMessage && (
                 <div className={clsx(

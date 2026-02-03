@@ -5,53 +5,160 @@
 使用 Caddy 替代 Nginx，同时提供：
 
 1. **静态文件服务**：提供前端应用
-2. **API 反向代理**：代理基金排行榜 API，设置正确的 Referer 绕过防盗链
+2. **API 反向代理**：代理所有 EastMoney API，设置正确的 Referer 绕过防盗链
+
+## 📡 代理的 API 列表
+
+所有 API 都使用统一的公共函数 `buildJsonpApiUrl` 来处理环境检测：
+
+- **开发环境**（localhost/127.0.0.1）：直接调用原始 API
+- **生产环境**：使用 Caddy 代理路径
+
+### 1. 基金排行榜 API
+
+- **原始 URL**: `https://fund.eastmoney.com/data/rankhandler.aspx`
+- **代理路径**: `/api/fund-ranking`
+- **文件**: `src/api/fundRanking.ts`
+
+### 2. 基金历史净值列表 API
+
+- **原始 URL**: `https://api.fund.eastmoney.com/f10/lsjz`
+- **代理路径**: `/api/fund-nav-history`
+- **文件**: `src/api/eastmoney.ts` → `fetchFundNavHistoryList`
+
+### 3. 基金实时估值 API
+
+- **原始 URL**: `https://fundgz.1234567.com.cn/js/{code}.js`
+- **代理路径**: `/api/fund-realtime/{code}.js`
+- **文件**: `src/api/eastmoney.ts` → `fetchFundRealtime`
+
+### 4. 基金净值趋势数据 API（pingzhongdata）
+
+- **原始 URL**: `https://fund.eastmoney.com/pingzhongdata/{code}.js`
+- **代理路径**: `/api/fund-pingzhongdata/{code}.js`
+- **文件**: `src/api/eastmoney.ts` → `fetchFundHistory`, `fetchFundBasicInfoFromPingzhong`, `fetchFundOverviewData`
+
+### 5. 基金详情和持仓 API（FundArchivesDatas）
+
+- **原始 URL**: `https://fundf10.eastmoney.com/FundArchivesDatas.aspx`
+- **代理路径**: `/api/fund-archives`
+- **文件**: `src/api/eastmoney.ts` → `fetchFundBasicInfo`, `fetchHoldingsBasic`
 
 ## 🔧 配置说明
 
 ### Caddyfile 配置
 
+所有 API 代理配置都在 `Caddyfile` 中，主要配置如下：
+
 ```caddy
 # API 代理：基金排行榜接口
 handle /api/fund-ranking* {
-    uri strip_prefix /api/fund-ranking
-    reverse_proxy https://fund.eastmoney.com/data/rankhandler.aspx {
+    uri replace /api/fund-ranking /data/rankhandler.aspx
+    reverse_proxy https://fund.eastmoney.com {
         header_up Referer "https://fund.eastmoney.com/"
         header_up Host "fund.eastmoney.com"
+        header_down -X-Frame-Options
+        header_down -X-XSS-Protection
+    }
+}
+
+# API 代理：基金历史净值接口
+handle /api/fund-nav-history* {
+    uri replace /api/fund-nav-history /f10/lsjz
+    reverse_proxy https://api.fund.eastmoney.com {
+        header_up Referer "https://fund.eastmoney.com/"
+        header_up Host "api.fund.eastmoney.com"
+        header_down -X-Content-Type-Options
+        header_down -X-Frame-Options
+        header_down -X-XSS-Protection
+    }
+}
+
+# API 代理：基金实时估值接口
+handle /api/fund-realtime/* {
+    uri replace /api/fund-realtime /js
+    reverse_proxy https://fundgz.1234567.com.cn {
+        header_up Referer "https://fund.eastmoney.com/"
+        header_up Host "fundgz.1234567.com.cn"
+        header_down -X-Content-Type-Options
+        header_down -X-Frame-Options
+        header_down -X-XSS-Protection
+    }
+}
+
+# API 代理：基金净值趋势数据接口（pingzhongdata）
+handle /api/fund-pingzhongdata/* {
+    uri replace /api/fund-pingzhongdata /pingzhongdata
+    reverse_proxy https://fund.eastmoney.com {
+        header_up Referer "https://fund.eastmoney.com/"
+        header_up Host "fund.eastmoney.com"
+        header_down -X-Content-Type-Options
+        header_down -X-Frame-Options
+        header_down -X-XSS-Protection
+    }
+}
+
+# API 代理：基金详情和持仓接口（FundArchivesDatas）
+handle /api/fund-archives* {
+    uri replace /api/fund-archives /FundArchivesDatas.aspx
+    reverse_proxy https://fundf10.eastmoney.com {
+        header_up Referer "https://fund.eastmoney.com/"
+        header_up Host "fundf10.eastmoney.com"
+        header_down -X-Content-Type-Options
+        header_down -X-Frame-Options
+        header_down -X-XSS-Protection
     }
 }
 ```
 
 ### 工作原理
 
-1. **前端请求**：`/api/fund-ranking?op=ph&dt=kf&...`
-2. **Caddy 处理**：
-   - `uri strip_prefix /api/fund-ranking` 移除前缀
-   - 保留查询参数：`?op=ph&dt=kf&...`
-   - 代理到：`https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&...`
+1. **前端请求**：根据环境自动选择 URL
+
+   - 开发环境：直接调用原始 API（如 `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&...`）
+   - 生产环境：使用代理路径（如 `/api/fund-ranking?op=ph&...`）
+
+2. **Caddy 处理**（仅生产环境）：
+
+   - `uri replace` 重写路径前缀
+   - 保留查询参数
+   - 代理到原始 API 服务器
+
 3. **设置 Headers**：
    - `Referer: https://fund.eastmoney.com/` - 绕过防盗链
-   - `Host: fund.eastmoney.com` - 确保服务器识别正确的域名
+   - `Host: {原始域名}` - 确保服务器识别正确的域名
+   - 移除 `X-Content-Type-Options` - 允许 JSONP 执行（某些 API 需要）
 
 ### 前端代码修改
 
-`src/api/fundRanking.ts` 中的 `getApiUrl()` 函数：
+所有 API 调用都使用公共工具函数 `buildJsonpApiUrl`（位于 `src/utils/apiUtils.ts`）：
 
 ```typescript
-const getApiUrl = () => {
-  const isProduction =
-    window.location.hostname !== "localhost" &&
-    window.location.hostname !== "127.0.0.1";
+import { buildJsonpApiUrl } from '../utils/apiUtils';
 
-  if (isProduction) {
-    // 使用相对路径，通过 Caddy 代理
-    return `/api/fund-ranking?${params.toString()}`;
-  } else {
-    // 开发环境直接调用原始 API
-    return `https://fund.eastmoney.com/data/rankhandler.aspx?${params.toString()}`;
-  }
+// 示例：基金排行榜 API
+const getApiUrl = () => {
+  return buildJsonpApiUrl(
+    'https://fund.eastmoney.com/data/rankhandler.aspx',
+    '/api/fund-ranking',
+    params
+  );
 };
+
+// 示例：历史净值 API
+const url = buildJsonpApiUrl(
+  'https://api.fund.eastmoney.com/f10/lsjz',
+  '/api/fund-nav-history',
+  { callback: callbackName, fundCode: code, ... }
+);
 ```
+
+**公共函数说明**：
+
+- `isDevelopment()`: 检测是否在开发环境
+- `buildJsonpApiUrl(originalUrl, proxyPath, params)`: 根据环境返回正确的 URL
+  - 开发环境：返回完整的原始 URL（包含查询参数）
+  - 生产环境：返回代理路径（包含查询参数）
 
 ## 🚀 部署
 

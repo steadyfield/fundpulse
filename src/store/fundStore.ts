@@ -88,19 +88,29 @@ export const useFundStore = create<FundStore>((set, get) => ({
       const maxOrder = await db.watchlist.orderBy('sortOrder').last();
       const sortOrder = (maxOrder?.sortOrder || 0) + 1;
 
-      // 获取当前净值（用于计算持仓份额）
-      let currentNav = 0;
+      // 计算持仓份额和成本价
       let userShares = 0;
-      let userCostPrice = cost;
+      let userCostPrice = cost || 0;
       
       if (amount && amount > 0) {
-        try {
-          const realtimeData = await fetchFundRealtime(code);
-          currentNav = realtimeData.nav || 0;
-          userCostPrice = cost || currentNav;
-          userShares = userCostPrice > 0 ? amount / userCostPrice : 0;
-        } catch (e) {
-          console.warn('获取实时净值失败，稍后设置持仓:', e);
+        // 如果提供了成本价，直接使用
+        if (cost && cost > 0) {
+          userCostPrice = cost;
+          userShares = amount / cost;
+        } else {
+          // 如果没有提供成本价，获取当前净值作为成本价
+          try {
+            const realtimeData = await fetchFundRealtime(code);
+            const currentNav = realtimeData.nav || realtimeData.estimateNav || 0;
+            if (currentNav > 0) {
+              userCostPrice = currentNav;
+              userShares = amount / currentNav;
+            } else {
+              console.warn('无法获取当前净值，持仓份额将设为0');
+            }
+          } catch (e) {
+            console.warn('获取实时净值失败，稍后设置持仓:', e);
+          }
         }
       }
 
@@ -201,21 +211,11 @@ export const useFundStore = create<FundStore>((set, get) => ({
 
     const updatedList = updates.map((result) => {
       if (result.status === 'fulfilled') {
-        const updated = result.value;
-        // 调试日志：输出更新后的数据
-        console.log(`[数据更新] 基金 ${updated.fundCode}:`, {
-          nav: updated.nav,
-          estimateNav: updated.estimateNav,
-          estimateGrowth: updated.estimateGrowth,
-          userShares: updated.userShares,
-          userCost: updated.userCost,
-        });
-        return updated;
+        return result.value;
       }
       return { ...watchlist[updates.indexOf(result)], isLoading: false, error: '请求失败' };
     });
 
-    console.log('[数据更新完成] 更新后的基金列表:', updatedList);
     set({ watchlist: updatedList });
   },
 

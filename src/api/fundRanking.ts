@@ -1,3 +1,5 @@
+import { buildJsonpApiUrl } from '../utils/apiUtils';
+
 export interface RankedFund {
   code: string;
   name: string;
@@ -115,7 +117,6 @@ const initRankDataSetter = () => {
                 dataDate: cols[FIELD_INDEX.dataDate] || '' // 数据日期（净值日期）
               };
             });
-            console.log(`✅ 解析成功，数据条数: ${funds.length}`);
             request.resolve(funds);
           } catch (err) {
             request.reject(err instanceof Error ? err : new Error('解析数据失败'));
@@ -189,21 +190,11 @@ export const fetchFundRanking = (options: {
   // 构建 API URL
   // 生产环境使用代理（通过 Caddy），开发环境直接调用原始 API
   const getApiUrl = () => {
-    // 检查是否在开发环境（只允许 localhost 和 127.0.0.1 直接调用原始 API）
-    const isDevelopment = window.location.hostname === 'localhost' || 
-                          window.location.hostname === '127.0.0.1' ||
-                          window.location.hostname.includes('localhost') ||
-                          window.location.hostname.includes('127.0.0.1');
-    
-    if (isDevelopment) {
-      // 开发环境直接调用原始 API
-      return `https://fund.eastmoney.com/data/rankhandler.aspx?${params.toString()}`;
-    } else {
-      // 生产环境使用相对路径，通过 Caddy 代理
-      const apiUrl = `/api/fund-ranking?${params.toString()}`;
-      console.log('📡 使用代理 API:', apiUrl, '当前域名:', window.location.hostname);
-      return apiUrl;
-    }
+    return buildJsonpApiUrl(
+      'https://fund.eastmoney.com/data/rankhandler.aspx',
+      '/api/fund-ranking',
+      params
+    );
   };
 
   return new Promise((resolve, reject) => {

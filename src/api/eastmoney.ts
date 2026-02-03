@@ -1,4 +1,5 @@
 // 东方财富基金 API 封装
+import { buildJsonpApiUrl } from '../utils/apiUtils';
 
 // 全局错误处理：捕获脚本语法错误
 if (typeof window !== 'undefined') {
@@ -101,19 +102,6 @@ const jsonpQueue: Array<{
     valuationTime: data.gztime || '', // 估值时间
   };
   
-  // 调试日志：输出原始 API 数据
-  console.log(`[API 原始数据] 基金 ${fundCode}:`, {
-    dwjz: data.dwjz,
-    gsz: data.gsz,
-    gszzl: data.gszzl,
-    gztime: data.gztime,
-    parsed: {
-      nav: result.nav,
-      estimateNav: result.estimateNav,
-      estimateGrowth: result.estimateGrowth,
-    },
-  });
-  
   request.resolve(result);
 };
 
@@ -141,7 +129,12 @@ export const fetchFundRealtime = async (code: string): Promise<RealtimeData> => 
 
     // 动态创建 script 标签
     const script = document.createElement('script');
-    script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
+    const url = buildJsonpApiUrl(
+      `https://fundgz.1234567.com.cn/js/${code}.js`,
+      `/api/fund-realtime/${code}.js`,
+      { rt: Date.now().toString() }
+    );
+    script.src = url;
     script.onerror = () => {
       const index = jsonpQueue.findIndex((r) => r.code === code);
       if (index !== -1) {
@@ -211,8 +204,12 @@ const fetchNetWorthTrendInternal = async (code: string): Promise<Array<{ x: numb
       reject(new Error('请求超时'));
     }, 30000);
     
-    // 保存脚本 URL，用于验证数据来源
-    const scriptUrl = `https://fund.eastmoney.com/pingzhongdata/${code}.js`;
+    // 保存脚本 URL，用于验证数据来源（开发环境使用原始 URL）
+    const scriptUrl = buildJsonpApiUrl(
+      `https://fund.eastmoney.com/pingzhongdata/${code}.js`,
+      `/api/fund-pingzhongdata/${code}.js`,
+      {}
+    );
     let dataLoaded = false;
     
     script.onerror = (error) => {
@@ -407,17 +404,6 @@ export const fetchFundHistory = async (code: string): Promise<NavHistoryItem[]> 
                 const day = String(dateObj.getDate()).padStart(2, '0');
                 const date = `${year}-${month}-${day}`;
                 
-                // 调试日志：输出时间戳和转换后的日期
-                console.log(`[历史净值解析] 时间戳: ${timestamp}, 转换后日期: ${date}`, {
-                  timestamp,
-                  date,
-                  UTC: dateObj.toISOString(),
-                  local: dateObj.toLocaleString('zh-CN'),
-                  getFullYear: dateObj.getFullYear(),
-                  getMonth: dateObj.getMonth() + 1,
-                  getDate: dateObj.getDate(),
-                });
-                
                 const nav = parseFloat(item.y) || 0;
                 const accNav = parseFloat(item.acc) || nav;
                 const dailyGrowth = item.equityReturn ? parseFloat(item.equityReturn) : undefined;
@@ -477,7 +463,12 @@ export const fetchFundHistory = async (code: string): Promise<NavHistoryItem[]> 
       reject(new Error('网络错误'));
     };
     
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`;
+    const url = buildJsonpApiUrl(
+      `https://fund.eastmoney.com/pingzhongdata/${code}.js`,
+      `/api/fund-pingzhongdata/${code}.js`,
+      { v: Date.now().toString() }
+    );
+    script.src = url;
     document.body.appendChild(script);
   });
 };
@@ -769,7 +760,12 @@ const fetchFundBasicInfoFromJBGK = async (
     // 使用 try-catch 包裹脚本添加，捕获可能的错误
     try {
       // 东方财富 F10 基本概况接口（返回包含 HTML 的 JavaScript 变量）
-      script.src = `https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jbgk&code=${fundCode}&t=${Date.now()}`;
+      const url = buildJsonpApiUrl(
+        `https://fundf10.eastmoney.com/FundArchivesDatas.aspx`,
+        `/api/fund-archives`,
+        { type: 'jbgk', code: fundCode, t: Date.now().toString() }
+      );
+      script.src = url;
       document.body.appendChild(script);
     } catch (e) {
       clearInterval(checkInterval);
@@ -891,7 +887,12 @@ const fetchHoldingsBasic = async (
     // 使用 try-catch 包裹脚本添加，捕获可能的错误
     try {
       // 东方财富 F10 持仓接口（返回包含 HTML 的 JavaScript 变量）
-      script.src = `https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code=${fundCode}&topline=10&t=${Date.now()}`;
+      const url = buildJsonpApiUrl(
+        `https://fundf10.eastmoney.com/FundArchivesDatas.aspx`,
+        `/api/fund-archives`,
+        { type: 'jjcc', code: fundCode, topline: '10', t: Date.now().toString() }
+      );
+      script.src = url;
       document.body.appendChild(script);
     } catch (e) {
       clearInterval(checkInterval);
@@ -1101,7 +1102,12 @@ const fetchFundBasicInfoFromPingzhong = async (
       reject(new Error('网络错误'));
     };
     
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`;
+    const url = buildJsonpApiUrl(
+      `https://fund.eastmoney.com/pingzhongdata/${code}.js`,
+      `/api/fund-pingzhongdata/${code}.js`,
+      { v: Date.now().toString() }
+    );
+    script.src = url;
     document.body.appendChild(script);
   });
 };
@@ -1227,7 +1233,12 @@ export const fetchFundOverviewData = async (code: string): Promise<FundOverviewD
       });
     };
     
-    script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`;
+    const url = buildJsonpApiUrl(
+      `https://fund.eastmoney.com/pingzhongdata/${code}.js`,
+      `/api/fund-pingzhongdata/${code}.js`,
+      { v: Date.now().toString() }
+    );
+    script.src = url;
     document.body.appendChild(script);
   });
 };
@@ -1465,17 +1476,206 @@ export const fetchFundNavHistoryList = async (
       reject(new Error('网络错误'));
     };
 
-    const url = `https://api.fund.eastmoney.com/f10/lsjz?callback=${callbackName}&fundCode=${code}&pageIndex=${pageIndex}&pageSize=${pageSize}&startDate=&endDate=&_=${Date.now()}`;
+    // 构建 API URL
+    // 生产环境使用代理（通过 Caddy），开发环境直接调用原始 API
+    const getApiUrl = () => {
+      const params = new URLSearchParams({
+        callback: callbackName,
+        fundCode: code,
+        pageIndex: pageIndex.toString(),
+        pageSize: pageSize.toString(),
+        startDate: '',
+        endDate: '',
+        _: Date.now().toString(),
+      });
+      
+      return buildJsonpApiUrl(
+        'https://api.fund.eastmoney.com/f10/lsjz',
+        '/api/fund-nav-history',
+        params
+      );
+    };
+
+    const url = getApiUrl();
     script.src = url;
     document.body.appendChild(script);
   });
 };
 
+/**
+ * 基金搜索结果
+ */
+export interface FundSearchResult {
+  code: string;
+  name: string;
+  shortName?: string;
+  nav?: number;
+  fundType?: string;
+  company?: string;
+}
+
+/**
+ * 搜索基金（支持代码和名称搜索）
+ * 使用防抖控制，避免频繁请求
+ */
+let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+let lastSearchTime = 0;
+const SEARCH_DEBOUNCE_MS = 500; // 防抖延迟 500ms
+const MIN_SEARCH_INTERVAL_MS = 300; // 最小搜索间隔 300ms
+
+export const searchFunds = async (keyword: string): Promise<FundSearchResult[]> => {
+  const trimmedKeyword = keyword.trim();
+  if (!trimmedKeyword) {
+    return [];
+  }
+
+  // 防抖控制：如果距离上次搜索时间太短，等待
+  const now = Date.now();
+  const timeSinceLastSearch = now - lastSearchTime;
+  if (timeSinceLastSearch < MIN_SEARCH_INTERVAL_MS) {
+    await new Promise(resolve => setTimeout(resolve, MIN_SEARCH_INTERVAL_MS - timeSinceLastSearch));
+  }
+
+  return new Promise((resolve, reject) => {
+    // 清除之前的防抖定时器
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+
+    // 设置防抖
+    searchTimeout = setTimeout(async () => {
+      try {
+        lastSearchTime = Date.now();
+        const callbackName = `jQuery${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const script = document.createElement('script');
+        
+        const timeout = setTimeout(() => {
+          try {
+            if (script.parentNode) {
+              script.parentNode.removeChild(script);
+            }
+          } catch (e) {
+            // ignore
+          }
+          try {
+            delete (window as any)[callbackName];
+          } catch (e) {
+            // ignore
+          }
+          reject(new Error('搜索超时'));
+        }, 10000);
+
+        // 设置全局回调函数
+        (window as any)[callbackName] = (data: any) => {
+          clearTimeout(timeout);
+          try {
+            if (script.parentNode) {
+              script.parentNode.removeChild(script);
+            }
+          } catch (e) {
+            // ignore
+          }
+          try {
+            delete (window as any)[callbackName];
+          } catch (e) {
+            // ignore
+          }
+
+          try {
+            if (!data || data.ErrCode !== 0 || !Array.isArray(data.Datas)) {
+              resolve([]);
+              return;
+            }
+
+            const results: FundSearchResult[] = data.Datas
+              .filter((item: any) => item.CATEGORY === 700 && item.FundBaseInfo) // 只返回基金类型
+              .map((item: any) => {
+                const fundInfo = item.FundBaseInfo;
+                return {
+                  code: fundInfo.FCODE || item.CODE || '',
+                  name: fundInfo.SHORTNAME || item.NAME || '',
+                  shortName: fundInfo.SHORTNAME,
+                  nav: fundInfo.DWJZ ? parseFloat(fundInfo.DWJZ) : undefined,
+                  fundType: fundInfo.FTYPE || '',
+                  company: fundInfo.JJGS || '',
+                };
+              });
+
+            resolve(results);
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error('解析搜索结果失败'));
+          }
+        };
+
+        script.onerror = () => {
+          clearTimeout(timeout);
+          try {
+            if (script.parentNode) {
+              script.parentNode.removeChild(script);
+            }
+          } catch (e) {
+            // ignore
+          }
+          try {
+            delete (window as any)[callbackName];
+          } catch (e) {
+            // ignore
+          }
+          reject(new Error('网络错误'));
+        };
+
+        // 构建 API URL
+        const params = new URLSearchParams({
+          callback: callbackName,
+          m: '1', // 搜索模式：1=基金
+          key: encodeURIComponent(trimmedKeyword),
+          _: Date.now().toString(),
+        });
+
+        const url = buildJsonpApiUrl(
+          `https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx`,
+          `/api/fund-search`,
+          params
+        );
+
+        script.src = url;
+        document.body.appendChild(script);
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error('搜索失败'));
+      }
+    }, SEARCH_DEBOUNCE_MS);
+  });
+};
+
+/**
+ * 验证基金代码（使用搜索接口）
+ */
 export const validateFundCode = async (code: string): Promise<{ valid: boolean; name?: string }> => {
   try {
-    const data = await fetchFundRealtime(code);
-    return { valid: true, name: data.name };
+    // 如果是6位数字代码，直接搜索
+    if (/^\d{6}$/.test(code)) {
+      const results = await searchFunds(code);
+      const exactMatch = results.find(r => r.code === code);
+      if (exactMatch) {
+        return { valid: true, name: exactMatch.name };
+      }
+    }
+    
+    // 尝试搜索（支持代码和名称）
+    const results = await searchFunds(code);
+    if (results.length > 0) {
+      // 优先返回精确匹配的代码
+      const exactMatch = results.find(r => r.code === code);
+      if (exactMatch) {
+        return { valid: true, name: exactMatch.name };
+      }
+      // 返回第一个结果
+      return { valid: true, name: results[0].name };
+    }
+    
+    return { valid: false };
   } catch (error) {
+    // 搜索失败，返回无效
     return { valid: false };
   }
 };
