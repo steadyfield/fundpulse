@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { useFundStore } from './store/fundStore';
-import { useSettingsStore } from './store/settingsStore';
 import { useAppStore } from './store/appStore';
 import { Header } from './components/Header';
 import { HomePage } from './components/HomePage';
@@ -9,8 +8,7 @@ import { FAQPage } from './components/FAQPage';
 import { ScrollToTop } from './components/ScrollToTop';
 
 function App() {
-  const { loadWatchlist, updateRealtimeData } = useFundStore();
-  const { getRefreshIntervalMs } = useSettingsStore();
+  const { loadWatchlist } = useFundStore();
   const { currentView } = useAppStore();
 
   // 初始化加载

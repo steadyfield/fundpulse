@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useIndexStore } from '../store/indexStore';
-import { useSettingsStore } from '../store/settingsStore';
 import clsx from 'clsx';
 
 import { MarketIndex } from '../db/schema';
@@ -26,7 +25,6 @@ const getIndexCategory = (code: string): IndexCategory => {
 
 export function IndexBar() {
   const { indices, isLoading, loadIndices } = useIndexStore();
-  const { getRefreshIntervalMs } = useSettingsStore();
   const [selectedCategory, setSelectedCategory] = useState<IndexCategory | null>(null);
 
   // 初始加载

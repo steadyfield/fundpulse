@@ -8,7 +8,7 @@ import { mergeFundData, calculateTodayProfit, calculateTotalProfit } from '../ut
 import { FlipNumber } from './FlipNumber';
 
 export function PortfolioPage() {
-  const { watchlist, selectedFundCode, selectFund, removeFund, updateUserHolding, updateRealtimeData, addFund } = useFundStore();
+  const { watchlist, selectedFundCode, selectFund, removeFund, updateUserHolding, addFund } = useFundStore();
   const { refreshPortfolioTrigger } = useAppStore();
   const [showFundModal, setShowFundModal] = useState(false);
   

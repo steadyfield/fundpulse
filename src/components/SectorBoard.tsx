@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import clsx from 'clsx';
 import { fetchSectors, SectorData } from '../api/sector';
 import { useAppStore } from '../store/appStore';
-import { useSettingsStore } from '../store/settingsStore';
 
 /**
  * 热门板块榜组件 - 紫调热力层级设计
@@ -13,7 +12,6 @@ export function SectorBoard() {
   const [activeTab, setActiveTab] = useState<'up' | 'down'>('up');
   const [isLoading, setIsLoading] = useState(false);
   const { refreshSectorTrigger } = useAppStore();
-  const { getRefreshIntervalMs } = useSettingsStore();
 
   const loadSectors = useCallback(async () => {
     setIsLoading(true);
